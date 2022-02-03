@@ -1,2 +1,2 @@
-# thesis
- The code for Ann's thesis
+# Ann's Thesis
+ Here lies my code
