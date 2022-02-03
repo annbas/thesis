@@ -2,12 +2,7 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
 covid_gis<-read.csv("covidnet_svi_nov15.csv")
 
-#library(lubridate)
 library(ggplot2)
-#library(ggrepel)
-#library(dplyr)
-#library(data.table)
-#library(tidyverse)
 library(Rcpp)
 library(choroplethr)
 library(choroplethrMaps)
@@ -215,6 +210,34 @@ library(mapproj)
                      #county_zoom = c(09009,09007),
                      title       = "Cases of COVID-19 per Census Tract in Connecticut (2020)",
                      legend      = "Case Count")
+    
+
+#INITIAL SIDE BY SIDE OF DPH HOSPITALIZATIONS AND COVID-NET CASES (NHV & MS)
+    #subset dph data to only include Y for hospitalization
+    dph_hosp<-subset(dph, hospital_admission == "Y")
+    #group by census tract
+    dph_hosp<-as.data.frame(table(dph_hosp$geoid10,useNA = c("no")))
+    
+    #change names for chloroplethr
+    names(dph_hosp)[names(dph_hosp) == "Var1"] <- "region"
+    names(dph_hosp)[names(dph_hosp) == "Freq"] <- "value"
+    #convert region and value to numeric for chloroplethr
+    dph_hosp$region<-as.numeric(levels(dph_hosp$region))[dph_hosp$region]
+    dph_hosp$value<-as.numeric(dph_hosp$value)
+    dph_hosp<-na.omit(dph_hosp)
+    
+    tract_choropleth(dph_hosp,
+                     state_name  = "connecticut",
+                     county_zoom = c(09009,09007),
+                     title       = "COVID-Related Hospitalizations per Census Tract in New Haven and Middlesex Counties (DPH 2020)",
+                     legend      = "Case Count")
+    
+    tract_choropleth(case_per_tract,
+                     state_name  = "connecticut",
+                     county_zoom = c(09009,09007),
+                     title       = "COVID-Related Hospitalizations per Census Tract in New Haven and Middlesex Counties (COVID-NET 2020)",
+                     legend      = "Case Count")
+    
     
    
     
