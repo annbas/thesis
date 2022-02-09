@@ -1,24 +1,25 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
-cen_pop<-read.csv("NH_MS_age_sex_census.csv")
+cen_pop<-read.csv("DECENNIALPL2020.P1_data_with_overlays_2022-02-08T191316.csv")
 
 #subset geo_id and total pop per census tract
-cen_pop<-cen_pop[c("GEO_ID","S0101_C01_001E")]
+cen_pop<-cen_pop[c("GEO_ID","P1_001N")]
 
 #rename columns
-names(cen_pop)[names(cen_pop) == "S0101_C01_001E"] <- "total_pop"
+names(cen_pop)[names(cen_pop) == "P1_001N"] <- "total_pop"
 
 #delete first row (non-data)
 cen_pop = cen_pop[-1,]
 
 
+##### COVID-NET IR #####
 
 ##### merging covid-net, geo-coded data #####
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     marsep<-read.csv("CDC REDCap_Mar-Sep.csv")
-    names(marsep)[names(marsep) == 'Ã¯..caseid'] <- 'caseid'
+    names(marsep)[names(marsep) == 'ï..caseid'] <- 'caseid'
     octdec<-read.csv("Yale REDCap_Oct-Dec.csv")
-    names(octdec)[names(octdec) == 'Ã¯..caseid'] <- 'caseid'
+    names(octdec)[names(octdec) == 'ï..caseid'] <- 'caseid'
     setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
     geocode<-read.csv("CTCovidFinalMatch_Mar-Dec2020_CDCFormat.csv")
     names(geocode)[names(geocode) == 'CASEID'] <- 'caseid'
@@ -49,7 +50,7 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
 
 ##### calculate incidence #####
     covidnet_inc$total_pop<-as.integer(covidnet_inc$total_pop)
-    covidnet_inc$incidence<-(covidnet_inc$cases_per_cen/covidnet_inc$total_pop)*10000
+    covidnet_inc$incidence<-(covidnet_inc$cases_per_cen/covidnet_inc$total_pop)*100000
     
 ##### convert GEO-ID to character #####
     covidnet_inc$GEO_ID<-as.character(covidnet_inc$GEO_ID)
@@ -60,4 +61,19 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
 
 #### export csv #####
     write.csv(covidnet_inc,"covidnet2020_IR.csv",row.names = FALSE)
+    
+    
+    
+    
+    
+    
+    
+###### DPH IR ######
+    #dph<-read.csv("covid_positive_tests_hospitalizations.csv")
+    
+    #create count of cases in each census tract and convert to df
+    #dph_inc<-as.data.frame(table(dph$CTNO2010))
+    #rename columns
+    #names(dph_inc)[names(covidnet_inc) == "Var1"] <- "GEO_ID"
+    #names(covidnet_inc)[names(covidnet_inc) == "Freq"] <- "cases_per_cen"
     
