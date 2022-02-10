@@ -39,10 +39,15 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
 ### HOSPITALIZATIONS ###  
     
   #melt to long on hospitalization data
-  hosp_long<-melt(hosp, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4"),
+  hosp_long<-melt(hosp[,c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4"),
                   na.rm = TRUE,
                   value.name = "week",
                   variable.name = "week.var")
+  
+  hosp$date1 <-as.Date( paste0(hosp$year_of_admission_1,'-',hosp$week_of_admission_1,'-','1'), '%Y-%U-%u' )
+  
+  hosp_long <- melt(hosp[,c('date1','date2','date3','date4',"id", "geoid10","age_group","gender","hisp_race","hospital_admission")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
+                  na.rm = TRUE)
 
   
   #melt again for year
