@@ -37,51 +37,80 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     
     
 ### HOSPITALIZATIONS ###  
+  
+  #week number >50 for 2021? convert to 2020 for now & wait for lexi response
+    yr.fix <- function(week,year) {
+      ifelse(week >= 50, 2020, year)
+    }  
+    
+    hosp$year_of_admission_1 <- yr.fix(hosp$week_of_admission_1,hosp$year_of_admission_1)
+    hosp$year_of_admission_2 <- yr.fix(hosp$week_of_admission_2,hosp$year_of_admission_2)
+    
+  #create new column with 53 + 2021 week number
+    hosp$admit1<-ifelse(hosp$year_of_admission_1 == 2021, hosp$week_of_admission_1+53, hosp$week_of_admission_1)
+    hosp$admit2<-ifelse(hosp$year_of_admission_2 == 2021, hosp$week_of_admission_2+53, hosp$week_of_admission_2)
+    hosp$admit3<-hosp$week_of_admission_3
+    hosp$admit4<-hosp$week_of_admission_4
+  
+  #remove year and week columns
+    rem<-hosp[,grep("^week", names(hosp))]
+    rem2<-hosp[,grep("^year", names(hosp))]
+    hosp<-hosp[,-which(names(hosp) %in% names(rem))]
+    hosp<-hosp[,-which(names(hosp) %in% names(rem2))]
+    
+  #melt to long
+    hosp_long<-melt(hosp, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
+                                      na.rm = TRUE,
+                                      value.name = "admit.week",
+                                      variable.name = "admit.number")
+    
+  #group by id and calculate lag between hospitalizations
+  library(dplyr)
+    hosp_diff<-hosp_long %>%
+      arrange(id) %>%
+      group_by(id) %>%
+      mutate(diff = admit.week - lag(admit.week, default = first(admit.week)))
+    
+    ungroup(hosp_diff)
+    
+  #convert from tibble to df
+    hosp_diff<-as.data.frame(hosp_diff)
+    
+  #create flag for "true" hospitalizations (i.e. lag between hospitalizations > 2 weeks)
+    hosp_diff$flag<-ifelse(hosp_diff$admit.number == c("admit1"),1,
+                           ifelse(hosp_diff$diff>2,1,0))
+    
+    
+  #hosp_yrfix$week.only<-ifelse(hosp_yrfix$year == 2021, hosp_yrfix$week+53, hosp_yrfix$week)
+  
+  #hosp_yrfix <- hosp_long2 %>%
+  #  mutate(year = ifelse(week >= 50, 2020, year))
     
   #melt to long on hospitalization data
-  hosp_long<-melt(hosp[,c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4"),
-                  na.rm = TRUE,
-                  value.name = "week",
-                  variable.name = "week.var")
+  #hosp_long<-melt(hosp[,c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4"),
+  #                na.rm = TRUE,
+  #                value.name = "week",
+  #                variable.name = "week.var")
   
-  hosp$date1 <-as.Date( paste0(hosp$year_of_admission_1,'-',hosp$week_of_admission_1,'-','1'), '%Y-%U-%u' )
+  #hosp$date1 <-as.Date( paste0(hosp$year_of_admission_1,'-',hosp$week_of_admission_1,'-','1'), '%Y-%U-%u' )
   
-  hosp_long <- melt(hosp[,c('date1','date2','date3','date4',"id", "geoid10","age_group","gender","hisp_race","hospital_admission")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
-                  na.rm = TRUE)
+  #hosp_long <- melt(hosp[,c('date1','date2','date3','date4',"id", "geoid10","age_group","gender","hisp_race","hospital_admission")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
+  #                na.rm = TRUE)
 
   
   #melt again for year
-  hosp_long2<-melt(hosp_long, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","week.var","week"),
-                   na.rm = TRUE,
-                   value.name = "year")
+  #hosp_long2<-melt(hosp_long, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","week.var","week"),
+  #                 na.rm = TRUE,
+  #                 value.name = "year")
   #remove year variable column
-  hosp_long2$variable<-NULL
+  #hosp_long2$variable<-NULL
   
   #remove duplicate rows
-  hosp_long2<-hosp_long2 %>%
-                distinct(id, geoid10, age_group, gender, hisp_race, hospital_admission, week.var, week,
-                         .keep_all = TRUE)
+  #hosp_long2<-hosp_long2 %>%
+  #              distinct(id, geoid10, age_group, gender, hisp_race, hospital_admission, week.var, week,
+  #                       .keep_all = TRUE)
   
-  #week number >50 for 2021? convert to 2020 for now & wait for lexi response
-  hosp_yrfix<-hosp_long2 %>%
-                mutate(year = ifelse(week >= 50, 2020, year))
   
-  #create new column with 53 + 2021 week number
-  hosp_yrfix$week.only<-ifelse(hosp_yrfix$year == 2021, hosp_yrfix$week+53, hosp_yrfix$week)
   
-  #group by id and calculate time lag between hospitalizations
-  #library(dplyr)
   
-  hosp_diff<-hosp_yrfix %>%
-    arrange(id) %>%
-    group_by(id) %>%
-    mutate(diff = week.only - lag(week.only, default = first(week.only)))
   
-  ungroup(hosp_diff)
-  
-  #convert from tibble to df
-  hosp_diff<-as.data.frame(hosp_diff)
-  
-  #create flag for "true" hospitalizations (i.e. lag between hospitalizations > 2 weeks)
-  hosp_diff$flag<-ifelse(hosp_diff$variable == c("week_of_admission_1"),1,
-                         ifelse(test_diff$diff>2,1,0))
