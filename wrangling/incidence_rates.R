@@ -1,12 +1,12 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
-cen_pop<-read.csv("DECENNIALPL2020.P1_data_with_overlays_2022-02-08T191316.csv")
+cen_pop<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
 
 #subset geo_id and total pop per census tract
-cen_pop<-cen_pop[c("GEO_ID","P1_001N")]
+cen_pop<-cen_pop[c("GEO_ID","P001001")]
 
 #rename columns
-names(cen_pop)[names(cen_pop) == "P1_001N"] <- "total_pop"
+names(cen_pop)[names(cen_pop) == "P001001"] <- "total_pop"
 
 #delete first row (non-data)
 cen_pop = cen_pop[-1,]
@@ -14,7 +14,7 @@ cen_pop = cen_pop[-1,]
 
 ##### COVID-NET IR #####
 
-##### merging covid-net, geo-coded data #####
+#merging covid-net, geo-coded data
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     marsep<-read.csv("CDC REDCap_Mar-Sep.csv")
     names(marsep)[names(marsep) == 'ï..caseid'] <- 'caseid'
@@ -45,14 +45,14 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     names(covidnet_inc)[names(covidnet_inc) == "Var1"] <- "GEO_ID"
     names(covidnet_inc)[names(covidnet_inc) == "Freq"] <- "cases_per_cen"
 
-##### merge with total pop dataset #####  
+    #merge with total pop dataset
     covidnet_inc<-merge(covidnet_inc, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
 
-##### calculate incidence #####
+    #calculate incidence
     covidnet_inc$total_pop<-as.integer(covidnet_inc$total_pop)
     covidnet_inc$incidence<-(covidnet_inc$cases_per_cen/covidnet_inc$total_pop)*100000
     
-##### convert GEO-ID to character #####
+    #convert GEO-ID to character
     covidnet_inc$GEO_ID<-as.character(covidnet_inc$GEO_ID)
     #save a copy with 9 at beginning of string (full FIPS code)
     write.csv(covidnet_inc,"covidnet2020_IR_FIPS.csv",row.names = FALSE)
@@ -69,11 +69,27 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     
     
 ###### DPH IR ######
-    #dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     
-    #create count of cases in each census tract and convert to df
-    #dph_inc<-as.data.frame(table(dph$CTNO2010))
+    #use hosp_diff from dph_datawrangling.R
+    #create count of cases in each census tract
+        dph_hosp_count<-aggregate(hosp_diff$flag ~ hosp_diff$geoid10, FUN=sum)
+        #104 missing, 297 NULL
+    
     #rename columns
-    #names(dph_inc)[names(covidnet_inc) == "Var1"] <- "GEO_ID"
-    #names(covidnet_inc)[names(covidnet_inc) == "Freq"] <- "cases_per_cen"
+    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$geoid10"] <- "GEO_ID"
+    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$flag"] <- "cases_per_cen"
+    
+    #remove 0 at front of census tract
+    dph_hosp_count$GEO_ID<-as.numeric(dph_hosp_count$GEO_ID)
+    dph_hosp_count$GEO_ID<-as.character(dph_hosp_count$GEO_ID)
+    
+    #merge with total pop dataset  
+    dph_hosp_inc<-merge(dph_hosp_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+    
+    #calculate incidence 
+    dph_hosp_inc$total_pop<-as.integer(dph_hosp_inc$total_pop)
+    dph_hosp_inc$incidence<-(dph_hosp_inc$cases_per_cen/dph_hosp_inc$total_pop)*100000
+    
+    #save dataset
+    write.csv(dph_hosp_inc,"dph2020_IR_FIPS.csv",row.names = FALSE)
     
