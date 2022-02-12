@@ -239,5 +239,43 @@ library(mapproj)
                      legend      = "Case Count")
     
     
-   
+    
+#SIDE BY SIDE OF DPH AND COVID-NET IR (NHV & MS)
+    dph_hosp_ir<-read.csv("dph2020_IR_FIPS.csv")
+    covidnet_hosp_ir<-read.csv("covidnet2020_IR_FIPS.csv")
+    
+    #change names for chloroplethr
+    names(dph_hosp_ir)[names(dph_hosp_ir) == "GEO_ID"] <- "region"
+    names(dph_hosp_ir)[names(dph_hosp_ir) == "incidence"] <- "value"
+    
+    names(covidnet_hosp_ir)[names(covidnet_hosp_ir) == "GEO_ID"] <- "region"
+    names(covidnet_hosp_ir)[names(covidnet_hosp_ir) == "incidence"] <- "value"
+    
+    #remove NAs in dph data?
+    dph_hosp_ir<-dph_hosp_ir[!is.na(dph_hosp_ir$region),]
+    
+    #create chloroplethr
+    dph_chloro<-tract_choropleth(dph_hosp_ir,
+                     state_name  = "connecticut",
+                     county_zoom = c(09009,09007),
+                     title       = "Incidence of COVID-Related Hospitalizations (DPH 2020)",
+                     legend      = "Incidence Rate") +
+                labs(subtitle = "per census tract in New Haven and Middlesex counties")
+    
+    
+    covidnet_chloro<-tract_choropleth(covidnet_hosp_ir,
+                         state_name  = "connecticut",
+                         county_zoom = c(09009,09007),
+                         title       = "Incidence of COVID-Related Hospitalizations (COVID-NET 2020)",
+                         legend      = "Incidence Rate") +
+                      labs(subtitle = "per census tract in New Haven and Middlesex counties")
+    
+    #put both on same graphic
+    #install.packages("ggpubr")
+    library(ggpubr)
+    ggarrange(dph_chloro, covidnet_chloro,
+              labels = c("A", "B"),
+              ncol = 1, nrow = 2,
+              common.legend = TRUE,
+              legend = "right")    
     

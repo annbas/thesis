@@ -92,4 +92,76 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     
     #save dataset
     write.csv(dph_hosp_inc,"dph2020_IR_FIPS.csv",row.names = FALSE)
+
+    
+    
+    
+    
+#IR by age, etc
+    #create covidnet dataset with "caseid","admdate","race","ethnic","sex","dob"
+        #use marsep, octdec, geocide_inc created above
+        sub<-c("caseid","admdate","race","ethnic","sex","dob")
+        
+        marsep2 <- marsep[sub]
+        octdec2 <- octdec[sub]
+        
+        #convert dates
+        marsep2$dob<-as.Date(marsep2$dob, format="%m/%d/%Y")
+        marsep2$admdate<-as.Date(marsep2$admdate, format="%m/%d/%Y")
+        
+        octdec2$dob<-as.Date(octdec2$dob, format="%Y-%m-%d")
+        octdec2$admdate<-as.Date(octdec2$admdate, format="%Y-%m-%d")
+        
+        #stack the two .csv files to create the main dataset
+        covidnet<-rbind(marsep2,octdec2)
+        
+        #merge covidnet with geocoded data 
+        covidnet_geo<-merge(covidnet, geocode_inc, by = "caseid", all.x = TRUE, all.y = FALSE)
+    
+        
+   #AGE
+    #need lubridate package to use trunc() function
+    library(lubridate)
+    #calculate age 
+    covidnet_geo$age<-trunc((covidnet_geo$dob %--% covidnet_geo$admdate) / years(1))
+    
+    #make a copy of the main dataset
+    covidnet_age<-covidnet_geo
+    #create bins of different age groups
+    library(dplyr)
+    covidnet_age <- covidnet_age %>% 
+                        mutate(age_group = case_when(age >= 0  & age <= 9  ~ '0-9',
+                                                     age >= 10 & age <= 19 ~ '10-19',
+                                                     age >= 20 & age <= 29 ~ '20-29',
+                                                     age >= 30 & age <= 39 ~ '30-39',
+                                                     age >= 40 & age <= 49 ~ '40-49',
+                                                     age >= 50 & age <= 59 ~ '50-59',
+                                                     age >= 60 & age <= 69 ~ '60-69',
+                                                     age >= 70 & age <= 79 ~ '70-79',
+                                                     age >= 80 ~ '80+'))
+    library(data.table)
+    #convert from data frame to data table
+    covidnet_age<-data.table(covidnet_age)
+    #create a dataset that has the number of people hospitalized by age group per census tract
+    
+    
+    covidnet_age<-dcast(covidnet_age,CTNO2010+age_group~.)
+    #missings
+    #1   NA NA    209
+    #2   NA 0-9   1
+    #3   NA 10-19 2
+    #4   NA 20-29 12
+    #5   NA 30-39 18
+    #6   NA 40-49 22
+    #7   NA 50-59 31
+    #8   NA 60-69 30
+    #9   NA 70-79 33
+    #10  NA 80+   36
+    
+    #change name
+    names(covidnet_age)[names(covidnet_age) == "."] <- "count"
+    
+    #create denominator
+    
+    #calculate incidence rate 
     

@@ -1,5 +1,20 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
+
+### univariate analysis ###
+
+
+
+
+
+
+
+
+
+
+
+
+############## fix everything below this point ##############
 #2020 IR per census tract and merge with SVI dataset
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv")
