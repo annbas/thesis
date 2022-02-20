@@ -38,7 +38,7 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     
 ### HOSPITALIZATIONS ###  
   
-  #week number >50 for 2021? convert to 2020 for now & wait for lexi response
+  #week number >50 for 2021? Might be something with melt
     yr.fix <- function(week,year) {
       ifelse(week >= 50, 2020, year)
     }  
@@ -112,5 +112,9 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
   
   
   
+    
+    
+    
+  ####MMWRweek package
   
   

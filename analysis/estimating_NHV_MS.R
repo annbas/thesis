@@ -4,7 +4,7 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 hosp_ir<-read.csv("covidnet2020_IR_FIPS.csv")
 test_ir<-read.csv("dph2020_test_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv")
-town<-read.csv("tract2town-2010.csv")
+town<-read.csv("tract2town-2010.csv") #from CT Data Collborative: https://github.com/CT-Data-Collaborative/ct-census-tract-to-town
 
 
 #create dataset with outcome and covariates
@@ -33,30 +33,63 @@ town<-read.csv("tract2town-2010.csv")
   #merge tract to town with ir/svi data
   ir_svi<-merge(ir_svi, town, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
 
+
+#######################################################################################  
   
-#group by town and create datasets with 10% missing data by town
-  #group by town and calculate time lag between positive tests
-  #install.packages("missMethods")
-  library(missMethods)
+#try to create loop to make 10 new datasets with missings
+  #created 10 datasets but missing in same location
+  #too loss-y?
   library(dplyr)
   
-  ir_svi_miss<-ir_svi %>%
-                group_by(town) %>%
-                mutate(miss1 = replace(covidnet.ir, sample(row_number(),  
-                                       size = ceiling(0.1 * n()), replace = FALSE), NA))
-              
-  ungroup(ir_svi_miss)
+  miss<-function(){
+    ir_svi %>%
+      group_by(town) %>%
+      mutate(covidnet.ir = replace(covidnet.ir, sample(row_number(),  
+                                                       size = ceiling(0.1 * n()), 
+                                                       replace = FALSE), NA))
+    ungroup(ir_svi_miss)
+  }
+  
+  result <- replicate(10, miss(),simplify = FALSE)
 
   
-#try to create loop to make 10 new datasets and/or 10 new column with missings
-  data<-ir_svi_miss
-  for(i in 1:10) {                                   # Head of for-loop
-    miss <- data %>%
-              group_by(town) %>%
-              mutate(miss1 = replace(covidnet.ir, sample(row_number(),  
-                                     size = ceiling(0.1 * n()), replace = FALSE), NA))                       # Create new column
-    data[ , ncol(data) + 1] <- miss                  # Append new column
-    colnames(data)[ncol(data)] <- paste0("miss", i)  # Rename column name
-  } 
+######################################################################################
+  
+  maybe<-ir_svi %>% 
+          group_by(town) %>% 
+          sample_frac(.1) 
+  
+  
+miss1<-ir_svi %>%
+        group_by(town) %>%
+        mutate(covidnet.ir = replace(covidnet.ir, sample(row_number(),  
+                                                         size = ceiling(0.1 * n()), 
+                                                         replace = FALSE), NA))
+  ungroup(miss1)  
+  
+
+#keep track of missing variables
+  miss_ind <- which(is.na(miss1$covidnet.ir))
+  
+#remove rows where miss1$covidnet.ir == NA
+  library(tidyr)
+  miss1_train <- miss1 %>% 
+                  drop_na(covidnet.ir)
+  
+#train on data with missings
+  #univariate? glm????
+  lm_miss <- lm(covidnet.ir ~ "??")
+  
+  
+  
+  
+ 
+  
+  
+  
+  
+  
+  
+
 
   

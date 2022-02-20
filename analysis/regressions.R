@@ -1,87 +1,166 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
+library(tidyr)
+library(dplyr)
+#install.packages("Hmisc")
+library(Hmisc)
+library(ggplot2)
+#install.packages("corrplot")
+library(corrplot)
+#install.packages("e1071")
+library(e1071)
+#install.packages("lmtest")
+library(lmtest)
+library(MASS)
 
-### univariate analysis ###
 
-
-
-
-
-
-
-
-
-
-
-
-############## fix everything below this point ##############
 #2020 IR per census tract and merge with SVI dataset
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
-svi<-read.csv("CDC_CensusTract_SVI.csv")
-
-#merge on FIPS
-ir_svi<-merge(ir, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE) #dataset with IR and SVI variables
+svi<-read.csv("CDC_CensusTract_SVI.csv") 
+test<-read.csv("dph2020_test_IR_FIPS.csv")
 
 
-#read in dataset with all 2020 COVID-NET cases merged with SVI
-cases_svi<-read.csv("covidnet_svi_nov15.csv")
+##replace -999 with NA?
+  svi[svi == -999] <- NA
+  #count NAs in each column
+  apply(is.na(svi), MARGIN = 2, FUN = sum)
 
-## CREATE REGRESSION USING ESTIMATE VALUES
+#sub FIPS and test in test
+test<-subset(test, select = c("GEO_ID","incidence"))
+#change name
+names(test)[names(test) == "incidence"] <- "test.incidence"
+
+#merge test and hosp 
+ir_svi<-merge(ir, test, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+names(ir_svi)[names(ir_svi) == "incidence"] <- "hosp.incidence"
+
+#merge SVI to incidence on FIPS
+ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE) #dataset with IR and SVI variables
+
+
   
   #subset to include estimates from svi data
-  e_sub<-ir_svi[,grep("^EP_", colnames(ir_svi))]
-  e_sub<-colnames(e_sub)
+  e_name<-ir_svi[,grep("^EPL_", colnames(ir_svi))]
+  e_name<-colnames(e_name)
+  e_name_unin<-c(e_name,"EP_UNINSUR") #add uninsured even though it doesn't have an EPL value?
+  e_sub<-subset(ir_svi,select=e_name)
+  e_sub_unin<-subset(ir_svi,select=e_name_unin)
+  
+  #subset including hosp rate, pos test rate
+  sub<-c("hosp.incidence","test.incidence",e_name_unin)
+  mod_sub<-subset(ir_svi,select = sub)
+  
+  
+  #summarize all vars
+  summary(mod_sub)
+  
+  
   
   #histogram of all estimates
+  plot_long<-gather(e_sub, key = "name", value = "value")
+  ggplot(plot_long) +
+    geom_histogram(aes(value)) +
+    facet_wrap(~name, ncol = 4)
+  
+  hist(e_sub_unin$EP_UNINSUR)
+  hist(mod_sub$test.incidence)
+  
+  #normality???
+  #apply(mod_sub,2,skewness)
+  #looks fine? All values between -1.5 and 1.5
+  
+  #linearity???
+  
+  #variance ?????
+  bptest(test.incidence~hosp.incidence, data=mod_sub)
   
   
-  #subset to include incidence and svi
-  sub<-c("incidence",e_sub)
-  lm.sub<-subset(ir_svi,select = sub)
+  #histogram of hosp rate
+  hist(mod_sub$hosp.incidence)
+  mean(mod_sub$hosp.incidence)
+  var(mod_sub$hosp.incidence)
+  
+  #scale ???
+  mod_sc<-cbind(mod_sub[1],apply(mod_sub[2:18],2, scale))
+  
 
-  #use scale() to normalize data
-  #lm.norm<-data.frame(scale(lm.sub))    #only scale covariates; apply scale() over columns
+ #only scale covariates; apply scale() over columns
   
-  #run regression
-  mod1<-glm(incidence~EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+EP_AGE17+
-                         EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
-                         EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR,
+############## fix everything below this point ##############
+  
+  pop<-sum(ir$total_pop) #pop = tot pop of new haven and middlesex?
+  
+#pois regression
+  mod1<-glm(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                         EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                         EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
             family = 'poisson',
-            offset=log(pop/100000),
-            data=lm.norm)
-  summary(linmod)
+            #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
+            data=mod_sc)
+  summary(mod1)
+  #warnings that outcome is non-integer--use hosp count instead of rate?
+  #Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
+  
+#using hosp count instead
+  mod_count<-cbind(ir[2],mod_sc[2:18])
+  
+  mod2<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+              EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+              EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
+            family = 'poisson',
+            #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
+            data=mod_count)
+  summary(mod2)
+  #still Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
+  
+#neg binom regression
+  #still using count data?
+  mod3<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                            EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                            EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
+               data=mod_count)
+  summary(mod3)
+  #Residual deviance: 232.08  on 206  degrees of freedom ?????
+  
+#try again with missing values removed before putting into model?
+  #should missing value be replaced with 0?
+  no_na_mod<-na.omit(mod_count)
+  mod4<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                 EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                 EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
+               data=no_na_mod)
+  summary(mod4)
+  
   
   #find optimal model using AIC
   #install.packages("MASS")
-  library(MASS)
-  optimal_model<-stepAIC(linmod)
+  optimal_model<-stepAIC(mod4)
   summary(optimal_model)
+  #Step:  AIC=1675.22
+  #cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+  #EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH
   
   
   
-  #TRY AGAIN WITH MIN-MAX NORMALIZATION
-    #define function
-    #min_max_norm <- function(x) {
-    #  (x - min(x)) / (max(x) - min(x))
-    #}
-    
-    #apply Min-Max normalization to data
-    #lm.norm.mm <- as.data.frame(lapply(lm.sub, min_max_norm))    
-    #summary(lm.norm.mm)
-    
-    #run regression
-    #linmod.mm<-lm(incidence~EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+EP_AGE17+
-    #                        EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
-    #                        EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR,
-    #              data=lm.norm.mm)
-    #summary(linmod.mm)
 
-    #AIC
-    #optimal_model.mm<-stepAIC(linmod.mm)
-    #summary(optimal_model.mm)
-    #incidence ~ EP_POV + EP_UNEMP + EP_AGE65 + EP_DISABL + EP_MINRTY +  EP_MUNIT + EP_UNINSUR
-    
-    
-    
- 
+  
+#estimate new haven and middlesex
+  geoid_sub<-cbind(ir[1:2],mod_sc[2:18])
+  
+  #leave out sample
+  rem<-geoid_sub %>% 
+          sample_frac(.1)
+  
+  #subset w/o leave out sample
+  train<-geoid_sub[!(geoid_sub$GEO_ID %in% rem$GEO_ID),]
+  train<-train[2:19]
+  
+  #train
+  mod5<-glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+                 EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
+               data=train)
+  summary(mod5)  
+
+  #predict
+  predict_miss<-predict(mod5, newdata = rem, interval = "prediction")
   
