@@ -65,11 +65,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   hist(e_sub_unin$EP_UNINSUR)
   hist(mod_sub$test.incidence)
   
-  #normality???
-  #apply(mod_sub,2,skewness)
-  #looks fine? All values between -1.5 and 1.5
-  
-  #linearity???
   
   #variance ?????
   bptest(test.incidence~hosp.incidence, data=mod_sub)
@@ -83,12 +78,8 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #scale ???
   mod_sc<-cbind(mod_sub[1],apply(mod_sub[2:18],2, scale))
   
-
- #only scale covariates; apply scale() over columns
-  
-############## fix everything below this point ##############
-  
-  pop<-sum(ir$total_pop) #pop = tot pop of new haven and middlesex?
+#is pop in mod1 the total pop of new haven and middlesex?
+pop<-sum(ir$total_pop) 
   
 #pois regression
   mod1<-glm(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
@@ -132,13 +123,29 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   summary(mod4)
   
   
-  #find optimal model using AIC
-  #install.packages("MASS")
+#find optimal model using AIC
+  #try 
   optimal_model<-stepAIC(mod4)
   summary(optimal_model)
-  #Step:  AIC=1675.22
-  #cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-  #EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH
+  
+  # stepAIC output
+  #
+  # Step:  AIC=1676.25
+  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+  #   EPL_SNGPNT + EPL_MINRTY + EPL_LIMENG + EPL_MUNIT + EPL_MOBILE + 
+  #   EPL_CROWD + EPL_NOVEH
+  #
+  #
+  # Step:  AIC=1675.43
+  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+  #   EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_CROWD + 
+  #   EPL_NOVEH
+  #
+  #
+  # Step:  AIC=1675.22
+  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+  #   EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH
+
   
   
   
@@ -154,6 +161,35 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #subset w/o leave out sample
   train<-geoid_sub[!(geoid_sub$GEO_ID %in% rem$GEO_ID),]
   train<-train[2:19]
+
+################################################################################
+ 
+  #function that creates a dataset with 10% missing data
+  miss<-function(){
+    
+    #randomly sample 10% of rows
+    x1<-geoid_sub %>% 
+         sample_frac(.1)
+    
+    ungroup(x1)
+    
+    #exclude sampled rows from datset
+    x2<-geoid_sub[!(geoid_sub$GEO_ID %in% x1$GEO_ID),]
+    x2<-x2[2:19]
+    
+    #create list of 
+    list(x1,x2)
+    
+  }
+  
+################################################################################
+  
+#create list of 10 datasets of in sample and out of sample
+  result <- replicate(10, miss(),simplify = FALSE)
+  
+  #create list of out of sample and in samples
+  listOut <- lapply(result, "[[", 1)
+  listIn <- lapply(result, "[[", 2)
   
   #train
   mod5<-glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
@@ -162,5 +198,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   summary(mod5)  
 
   #predict
-  predict_miss<-predict(mod5, newdata = rem, interval = "prediction")
+  predict_miss<-predict(mod5, newdata = rem, type = "response")
+  cbind(predict_miss,rem$cases_per_cen)
   
