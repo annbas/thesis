@@ -16,7 +16,7 @@ library(MASS)
 library(plyr)
 
 
-#2020 IR per census tract and merge with SVI dataset
+#read in data
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv") 
 test<-read.csv("dph2020_test_IR_FIPS.csv")
@@ -56,7 +56,11 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #summarize all vars
   summary(mod_sub)
   
-  
+  #corrplot of variables
+  mod_sub2<-na.omit(mod_sub)
+  cov_cor<-cor(mod_sub2)
+  corrplot(cov_cor,method = "number")
+  corrplot(cov_cor, order = 'AOE')
   
   #histogram of all estimates
   plot_long<-gather(e_sub, key = "name", value = "value")
@@ -156,28 +160,19 @@ pop<-sum(ir$total_pop)
   
   
 
-  
-#estimate new haven and middlesex
-  geoid_sub<-cbind(ir[1:2],mod_sc[2:18])
-  
-  #leave out sample
-  rem<-geoid_sub %>% 
-          sample_frac(.1)
-  
-  #subset w/o leave out sample
-  train<-geoid_sub[!(geoid_sub$GEO_ID %in% rem$GEO_ID),]
-  train<-train[2:19]
-
 ################################################################################
  
   #function that creates a dataset with 10% missing data
   miss<-function(){
+    
+    set.seed(123)
     
     #randomly sample 10% of rows
     x1<-geoid_sub %>% 
          sample_frac(.1)
     
     ungroup(x1)
+    #x1<-x1[2:19]
     
     #exclude sampled rows from datset
     x2<-geoid_sub[!(geoid_sub$GEO_ID %in% x1$GEO_ID),]
@@ -197,29 +192,74 @@ pop<-sum(ir$total_pop)
   listOut <- lapply(result, "[[", 1)
   listIn <- lapply(result, "[[", 2)
   
-  #train
-    mod5<-lapply(listIn, function(x){
-      glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-                                                  EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
-                                                data=x)
-      }
-        )
   
-  #look at output
-  lapply(mod5, function(x){
-    summary(x)
+  #try predicting with model in lapply
+  predict_miss<-lapply(result, function(x){
+    mod6<-glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+             EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
+           data=x[[2]])
+    predict(mod6, newdata = x[[1]], type = "response")
   }
-    )
-
-  #predict FIGURE OUT HOW TO APPLY LIST TO A LIST
-  predict_miss<-for (i in mod5){
-    lapply(listOut, function(x){
-      predict(mod5[i], newdata = x, type = "response")
-      }
     ) 
-  }
   
-    
+#create dataset to compare predicted and out of sample values
+  hm<-as.data.frame(unlist(lapply(listOut,function(x) x[,1])))
+  names(hm)[names(hm) == "unlist(lapply(listOut, function(x) x[, 1]))"] <- "GEO_ID"
+  hm$mod<-unlist(predict_miss)
+  hm$out.samp<-unlist(lapply(listOut,function(x) x[,2]))
+  
+  
+  
+#correlogram
+  m<-cor(hm[,2:3])
+  corrplot(m,method = "number")
                       
-  cbind(predict_miss,rem$cases_per_cen)
   
+  
+  
+  
+  
+  
+
+  
+  
+  
+  
+  
+  
+  
+##### code graveyard #####    
+  
+  #estimate new haven and middlesex
+  #geoid_sub<-cbind(ir[1:2],mod_sc[2:18])
+  
+  #leave out sample
+  #rem<-geoid_sub %>% 
+  #  sample_frac(.1)
+  
+  #subset w/o leave out sample
+  #train<-geoid_sub[!(geoid_sub$GEO_ID %in% rem$GEO_ID),]
+  #train<-train[2:19]
+  
+  
+  #train
+  #mod5<-lapply(listIn, function(x){
+  #  glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+  #           EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
+  #         data=x)
+  #}
+  #)
+  
+  #view output
+  #lapply(mod5, function(x){
+  #  summary(x)
+  #}
+  #)
+  
+  #trial<-list(listOut,mod5)
+  
+  #predict 
+  #predict_miss<-lapply(trial, function(x){
+  #  predict(x[[2]], newdata = x[[1]], type = "response")
+  #}
+  #) 
