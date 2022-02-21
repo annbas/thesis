@@ -12,6 +12,8 @@ library(e1071)
 #install.packages("lmtest")
 library(lmtest)
 library(MASS)
+#install.packages("plyr")
+library(plyr)
 
 
 #2020 IR per census tract and merge with SVI dataset
@@ -89,6 +91,7 @@ pop<-sum(ir$total_pop)
             #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
             data=mod_sc)
   summary(mod1)
+  plot(mod1$residuals)
   #warnings that outcome is non-integer--use hosp count instead of rate?
   #Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
   
@@ -102,6 +105,7 @@ pop<-sum(ir$total_pop)
             #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
             data=mod_count)
   summary(mod2)
+  plot(mod2$residuals)
   #still Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
   
 #neg binom regression
@@ -111,6 +115,7 @@ pop<-sum(ir$total_pop)
                             EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
                data=mod_count)
   summary(mod3)
+  plot(mod3$residuals)
   #Residual deviance: 232.08  on 206  degrees of freedom ?????
   
 #try again with missing values removed before putting into model?
@@ -121,6 +126,7 @@ pop<-sum(ir$total_pop)
                  EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
                data=no_na_mod)
   summary(mod4)
+  plot(mod4$residuals)
   
   
 #find optimal model using AIC
@@ -192,12 +198,28 @@ pop<-sum(ir$total_pop)
   listIn <- lapply(result, "[[", 2)
   
   #train
-  mod5<-glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-                 EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
-               data=train)
-  summary(mod5)  
+    mod5<-lapply(listIn, function(x){
+      glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
+                                                  EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
+                                                data=x)
+      }
+        )
+  
+  #look at output
+  lapply(mod5, function(x){
+    summary(x)
+  }
+    )
 
-  #predict
-  predict_miss<-predict(mod5, newdata = rem, type = "response")
+  #predict FIGURE OUT HOW TO APPLY LIST TO A LIST
+  predict_miss<-for (i in mod5){
+    lapply(listOut, function(x){
+      predict(mod5[i], newdata = x, type = "response")
+      }
+    ) 
+  }
+  
+    
+                      
   cbind(predict_miss,rem$cases_per_cen)
   
