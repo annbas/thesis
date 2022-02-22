@@ -72,32 +72,29 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   hist(mod_sub$test.incidence)
   
   
-  #variance ?????
-  bptest(test.incidence~hosp.incidence, data=mod_sub)
-  
-  
   #histogram of hosp rate
   hist(mod_sub$hosp.incidence)
   mean(mod_sub$hosp.incidence)
   var(mod_sub$hosp.incidence)
   
   #scale ???
-  mod_sc<-cbind(mod_sub[1],apply(mod_sub[2:18],2, scale))
+  mod_sc<-cbind(mod_sub[1],ir[3],apply(mod_sub[2:18],2, scale))
   
-#is pop in mod1 the total pop of new haven and middlesex?
-pop<-sum(ir$total_pop) 
   
+  
+####### regressions #####
+    
 #pois regression
   mod1<-glm(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
                          EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
                          EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
             family = 'poisson',
-            #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
+            offset=log(total_pop/100000), 
             data=mod_sc)
   summary(mod1)
   plot(mod1$residuals)
   #warnings that outcome is non-integer--use hosp count instead of rate?
-  #Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
+  #Residual deviance: 20766  on 206  degrees of freedom
   
 #using hosp count instead
   mod_count<-cbind(ir[2],mod_sc[2:18])
@@ -106,7 +103,6 @@ pop<-sum(ir$total_pop)
               EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
               EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
             family = 'poisson',
-            #offset=log(pop/100000), #Error: variable lengths differ (found for '(offset)')
             data=mod_count)
   summary(mod2)
   plot(mod2$residuals)
@@ -132,9 +128,18 @@ pop<-sum(ir$total_pop)
   summary(mod4)
   plot(mod4$residuals)
   
+#neg binom with rates
+  no_na_modsc<-na.omit(mod_sc)
+  mod7<-glm.nb(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                 EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                 EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+               offset(log(total_pop/100000)),
+               data=no_na_modsc)
+  summary(mod7)
+  plot(mod7$residuals)
+  
   
 #find optimal model using AIC
-  #try 
   optimal_model<-stepAIC(mod4)
   summary(optimal_model)
   
