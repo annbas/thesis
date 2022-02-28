@@ -2,18 +2,18 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
 library(tidyr)
 library(dplyr)
+library(purrr)
 #install.packages("Hmisc")
 library(Hmisc)
 library(ggplot2)
-#install.packages("corrplot")
 library(corrplot)
 #install.packages("e1071")
 library(e1071)
-#install.packages("lmtest")
 library(lmtest)
 library(MASS)
 #install.packages("plyr")
 library(plyr)
+library(Metrics)
 
 
 #read in data
@@ -96,7 +96,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #warnings that outcome is non-integer--use hosp count instead of rate?
   #Residual deviance: 20766  on 206  degrees of freedom
   
-#using hosp count instead
+#using hosp count instead?
   mod_count<-cbind(ir[2],mod_sc[2:18])
   
   mod2<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
@@ -168,19 +168,21 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 ################################################################################
  
   #function that creates a dataset with 10% missing data
-  miss<-function(){
+  miss<-function(data){
     
-    set.seed(123)
+    #add back census id
+    data<-cbind(ir[1],data)
+    
+    #set.seed(123) ??
     
     #randomly sample 10% of rows
-    x1<-geoid_sub %>% 
+    x1<-data %>% 
          sample_frac(.1)
     
     ungroup(x1)
-    #x1<-x1[2:19]
     
     #exclude sampled rows from datset
-    x2<-geoid_sub[!(geoid_sub$GEO_ID %in% x1$GEO_ID),]
+    x2<-data[!(data$GEO_ID %in% x1$GEO_ID),]
     x2<-x2[2:19]
     
     #create list of 
@@ -204,16 +206,19 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
              EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
            data=x[[2]])
     predict(mod6, newdata = x[[1]], type = "response")
-  }
-    ) 
+    }
+  ) 
   
 #create dataset to compare predicted and out of sample values
   hm<-as.data.frame(unlist(lapply(listOut,function(x) x[,1])))
   names(hm)[names(hm) == "unlist(lapply(listOut, function(x) x[, 1]))"] <- "GEO_ID"
   hm$mod<-unlist(predict_miss)
   hm$out.samp<-unlist(lapply(listOut,function(x) x[,2]))
-  
-  
+ 
+   
+#plot modeled vs. actual
+  ggplot(hm, aes(x=mod, y=out.samp)) + 
+    geom_point() 
   
 #correlogram
   m<-cor(hm[,2:3])
@@ -221,9 +226,55 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
                       
   
   
+##USE RATES##
+  #create list of 10 datasets of in sample and out of sample
+  result2 <- replicate(10, miss(mod_sc),simplify = FALSE)
+  
+  #create list of out of sample and in samples
+  OutRate <- lapply(result2, "[[", 1)
+  InRate <- lapply(result2, "[[", 2)
+  
+  
+  #try predicting with model in lapply
+  predict_miss2<-lapply(result2, function(x){
+    mod8<-glm.nb(hosp.incidence ~ test.incidence + EPL_POV + EPL_AGE65 + 
+                   EPL_DISABL + EPL_MINRTY + EPL_MOBILE + EPL_NOVEH + 
+                 offset(log(total_pop/1e+05)),
+                 data=x[[2]])
+    predict(mod8, newdata = x[[1]], type = "response")
+    }
+  ) 
+  
+  #mean absolute error for each dataset
+  hosp.incidence<-c("hosp.incidence")
+  maeSub<-lapply(OutRate, "[", , "hosp.incidence")
+  x<-lapply(predict_miss2,as.vector)
+
+  #mean absolute error
+  maeres<-NULL
+  for(i in 1:10){
+    x2<-mae(maeSub[[i]],x[[i]])
+    maeres<-c(maeres,x2)
+  }
   
   
   
+  #create dataset to compare predicted and out of sample values
+  hm2<-as.data.frame(unlist(lapply(OutRate,function(x) x[,1])))
+  names(hm2)[names(hm2) == "unlist(lapply(OutRate, function(x) x[, 1]))"] <- "GEO_ID"
+  hm2$mod<-unlist(predict_miss2)
+  hm2$out.samp<-unlist(lapply(OutRate,function(x) x[,2]))
+  
+  #plot modeled vs. actual
+  ggplot(hm2, aes(x=mod, y=out.samp)) + 
+    geom_point()+
+    geom_abline(slope = 1, color = "red")
+    
+  
+  #correlogram
+  m2<-na.omit(hm2)
+  m2<-cor(m2[,2:3])
+  corrplot(m2,method = "number") 
   
 
   
@@ -234,9 +285,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   
   
 ##### code graveyard #####    
-  
-  #estimate new haven and middlesex
-  #geoid_sub<-cbind(ir[1:2],mod_sc[2:18])
   
   #leave out sample
   #rem<-geoid_sub %>% 
