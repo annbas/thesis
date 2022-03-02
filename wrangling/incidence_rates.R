@@ -75,15 +75,19 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     names(dph_test_count)[names(dph_test_count) == "test_diff$geoid10"] <- "GEO_ID"
     names(dph_test_count)[names(dph_test_count) == "test_diff$flag"] <- "cases_per_cen"
     
+    #remove 0 at front of census tract
+    dph_test_count$GEO_ID<-as.numeric(dph_test_count$GEO_ID)
+    dph_test_count$GEO_ID<-as.character(dph_test_count$GEO_ID)
+    
     #merge with total pop dataset  
-    dph_test_inc<-merge(dph_hosp_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+    dph_test_inc<-merge(dph_test_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
     
     #calculate incidence 
-    dph_hosp_inc$total_pop<-as.integer(dph_hosp_inc$total_pop)
-    dph_hosp_inc$incidence<-(dph_hosp_inc$cases_per_cen/dph_hosp_inc$total_pop)*100000
+    dph_test_inc$total_pop<-as.integer(dph_test_inc$total_pop)
+    dph_test_inc$incidence<-(dph_test_inc$cases_per_cen/dph_test_inc$total_pop)*100000
     
     #save dataset
-    write.csv(dph_hosp_inc,"dph2020_test_IR_FIPS.csv",row.names = FALSE)
+    write.csv(dph_test_inc,"dph2020_test_IR_FIPS.csv",row.names = FALSE)
     
     
     

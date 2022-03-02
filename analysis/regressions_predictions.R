@@ -59,7 +59,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #corrplot of variables
   mod_sub2<-na.omit(mod_sub)
   cov_cor<-cor(mod_sub2)
-  corrplot(cov_cor,method = "number")
+  #corrplot(cov_cor,method = "number")
   corrplot(cov_cor, order = 'AOE')
   
   #histogram of all estimates
@@ -77,27 +77,19 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   mean(mod_sub$hosp.incidence)
   var(mod_sub$hosp.incidence)
   
-  #scale ???
+  #scale
   mod_sc<-cbind(mod_sub[1],ir[3],apply(mod_sub[2:18],2, scale))
   
+  #corplot
+  mod_sc_cor<-na.omit(mod_sc)
+  cov_cor<-cor(mod_sc_cor)
+  corrplot(cov_cor, order = 'AOE')
   
   
 ####### regressions #####
-    
-#pois regression
-  mod1<-glm(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                         EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                         EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
-            family = 'poisson',
-            offset=log(total_pop/100000), 
-            data=mod_sc)
-  summary(mod1)
-  plot(mod1$residuals)
-  #warnings that outcome is non-integer--use hosp count instead of rate?
-  #Residual deviance: 20766  on 206  degrees of freedom
-  
+   
 #using hosp count instead?
-  mod_count<-cbind(ir[2],mod_sc[2:18])
+  mod_count<-cbind(ir[2],mod_sc[2:19])
   
   mod2<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
               EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
@@ -107,10 +99,10 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
             data=mod_count)
   summary(mod2)
   plot(mod2$residuals)
-  #still Residual deviance:  9683.1  on 206  degrees of freedom; use negative binomial
+  #Residual deviance:  779.46  on 207  degrees of freedom
   
 #neg binom regression
-  #still using count data?
+  #count data
   mod3<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
                             EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
                             EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
@@ -118,54 +110,31 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
                data=mod_count)
   summary(mod3)
   plot(mod3$residuals)
-  #Residual deviance: 232.08  on 206  degrees of freedom ?????
+  #Residual deviance: 232.08  on 206  degrees of freedom
   
-#try again with missing values removed before putting into model?
-  #should missing value be replaced with 0?
-  no_na_mod<-na.omit(mod_count)
-  mod4<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                 EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                 EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
-                offset(log(total_pop/100000)),
-               data=no_na_mod)
+  #null model
+  null_mod<-glm.nb(cases_per_cen~total_pop+test.incidence+
+                     offset(log(total_pop/100000)),
+                   data=mod_count)
+  summary(null_mod)
+  
+#poisson with log transformed data
+  mod4<-glm(log(cases_per_cen)~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+              EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+              EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
+            family = 'poisson',
+            offset=log(total_pop/100000),
+            data=mod_count)
   summary(mod4)
   plot(mod4$residuals)
   
-#neg binom with rates
-  no_na_modsc<-na.omit(mod_sc)
-  mod7<-glm.nb(hosp.incidence~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                 EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                 EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
-               offset(log(total_pop/100000)),
-               data=no_na_modsc)
-  summary(mod7)
-  plot(mod7$residuals)
-  
-  
 #find optimal model using AIC
-  optimal_model<-stepAIC(mod4)
+  optimal_model<-stepAIC(mod3)
   summary(optimal_model)
-  
-  # stepAIC output
-  #
-  # Step:  AIC=1676.25
-  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-  #   EPL_SNGPNT + EPL_MINRTY + EPL_LIMENG + EPL_MUNIT + EPL_MOBILE + 
-  #   EPL_CROWD + EPL_NOVEH
-  #
-  #
-  # Step:  AIC=1675.43
-  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-  #   EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_CROWD + 
-  #   EPL_NOVEH
-  #
-  #
-  # Step:  AIC=1675.22
-  # cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-  #   EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH
+  #AIC of null mod vs. optimal mod
+  AIC(null_mod)
+  AIC(optimal_model)
 
-  
-  
   
 
 ################################################################################
@@ -186,7 +155,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     
     #exclude sampled rows from datset
     x2<-data[!(data$GEO_ID %in% x1$GEO_ID),]
-    x2<-x2[2:19]
+    x2<-x2[2:20]
     
     #create list of 
     list(x1,x2)
@@ -196,24 +165,33 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 ################################################################################
   
 #create list of 10 datasets of in sample and out of sample
-  result <- replicate(10, miss(),simplify = FALSE)
+  result <- replicate(10, miss(mod_count),simplify = FALSE)
   
   #create list of out of sample and in samples
   listOut <- lapply(result, "[[", 1)
   listIn <- lapply(result, "[[", 2)
   
-  #AIC of out sample
-    #I forget what this even looks like
-    sapply(listOut, stepAIC)
+  #AIC of hold out
+    x<-lapply(listOut, function(x){
+                 mod<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                                EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                                EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+                              offset(log(total_pop/100000)),
+                              data=x)
+                y<-stepAIC(mod)
+                z<-list(y$call,y$aic)
+              }
+            )
   
-  #try predicting with model in lapply
+  #try predicting with model in lapply 
   predict_miss<-lapply(result, function(x){
-    mod6<-glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-             EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
-           data=x[[2]])
-    predict(mod6, newdata = x[[1]], type = "response")
-    }
-  ) 
+        mod6<-glm.nb(cases_per_cen ~ test.incidence + EPL_UNEMP + EPL_AGE65 + 
+                       EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_GROUPQ + EP_UNINSUR + 
+                     offset(log(total_pop/1e+05)),
+                  data=x[[2]])
+        predict(mod6, newdata = x[[1]], type = "response")
+      }
+    ) 
   
 #create dataset to compare predicted and out of sample values
   hm<-as.data.frame(unlist(lapply(listOut,function(x) x[,1])))
@@ -221,66 +199,65 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   hm$mod<-unlist(predict_miss)
   hm$out.samp<-unlist(lapply(listOut,function(x) x[,2]))
  
-   
-#plot modeled vs. actual
-  ggplot(hm, aes(x=mod, y=out.samp)) + 
-    geom_point() 
-  
-#correlogram
-  m<-cor(hm[,2:3])
-  corrplot(m,method = "number")
-                      
-  
-  
-##USE RATES##
-  #create list of 10 datasets of in sample and out of sample
-  result2 <- replicate(10, miss(mod_sc),simplify = FALSE)
-  
-  #create list of out of sample and in samples
-  OutRate <- lapply(result2, "[[", 1)
-  InRate <- lapply(result2, "[[", 2)
-  
-  
-  #try predicting with model in lapply
-  predict_miss2<-lapply(result2, function(x){
-    mod8<-glm.nb(hosp.incidence ~ test.incidence + EPL_POV + EPL_AGE65 + 
-                   EPL_DISABL + EPL_MINRTY + EPL_MOBILE + EPL_NOVEH + 
-                 offset(log(total_pop/1e+05)),
-                 data=x[[2]])
-    predict(mod8, newdata = x[[1]], type = "response")
-    }
-  ) 
   
   #mean absolute error for each dataset
-  hosp.incidence<-c("hosp.incidence")
-  maeSub<-lapply(OutRate, "[", , "hosp.incidence")
-  x<-lapply(predict_miss2,as.vector)
-
+  maeSub<-lapply(listOut, "[", , "cases_per_cen")
+  pred_vec<-lapply(predict_miss,as.vector)
+  
   #mean absolute error
   maeres<-NULL
   for(i in 1:10){
-    x2<-mae(maeSub[[i]],x[[i]])
+    x2<-mae(maeSub[[i]],pred_vec[[i]])
     maeres<-c(maeres,x2)
   }
+   
+#plot modeled vs. actual
+  ggplot(hm, aes(x=mod, y=out.samp)) + 
+    geom_point() +
+    geom_abline(slope = 1, color = "red") +
+    xlab("predicted") +
+    ylab("observed") +
+    labs(caption = "not log-transformed") +
+    theme_classic()
   
+#correlogram
+  m<-na.omit(hm)
+  m<-cor(m[,2:3])
+  corrplot(m,method = "number")
+
   
+                        
   
-  #create dataset to compare predicted and out of sample values
-  hm2<-as.data.frame(unlist(lapply(OutRate,function(x) x[,1])))
-  names(hm2)[names(hm2) == "unlist(lapply(OutRate, function(x) x[, 1]))"] <- "GEO_ID"
-  hm2$mod<-unlist(predict_miss2)
-  hm2$out.samp<-unlist(lapply(OutRate,function(x) x[,2]))
-  
-  #plot modeled vs. actual
-  ggplot(hm2, aes(x=mod, y=out.samp)) + 
-    geom_point()+
-    geom_abline(slope = 1, color = "red")
+#try with log transformed data
+  predict_miss_log<-lapply(result, function(x){
+    mod6<-glm(log(cases_per_cen) ~ test.incidence + EPL_POV + 
+                EPL_UNEMP + EPL_PCI + EPL_NOHSDP + EPL_AGE65 + EPL_AGE17 + 
+                EPL_DISABL + EPL_SNGPNT + EPL_MINRTY + EPL_LIMENG + EPL_MUNIT + 
+                EPL_MOBILE + EPL_CROWD + EPL_NOVEH + EPL_GROUPQ + EP_UNINSUR,
+              data=x[[2]])
+    pred<-exp(predict(mod6, newdata = x[[1]], type = "response"))
+    }
+  ) 
+
+#create dataset to compare predicted and out of sample values
+  log_hm<-hm
+  log_hm$mod<-NULL
+  log_hm$mod<-unlist(predict_miss_log)
     
+  #plot modeled vs. actual
+  ggplot(log_hm, aes(x=mod, y=out.samp)) + 
+    geom_point() +
+    geom_abline(slope = 1, color = "red") +
+    labs(caption = "log-transformed") +
+    theme_classic()
   
   #correlogram
-  m2<-na.omit(hm2)
-  m2<-cor(m2[,2:3])
-  corrplot(m2,method = "number") 
+  m<-na.omit(log_hm)
+  m<-cor(m[,2:3])
+  corrplot(m,method = "number")
+  
+  
+  
   
 
   
@@ -290,35 +267,3 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   
   
   
-##### code graveyard #####    
-  
-  #leave out sample
-  #rem<-geoid_sub %>% 
-  #  sample_frac(.1)
-  
-  #subset w/o leave out sample
-  #train<-geoid_sub[!(geoid_sub$GEO_ID %in% rem$GEO_ID),]
-  #train<-train[2:19]
-  
-  
-  #train
-  #mod5<-lapply(listIn, function(x){
-  #  glm.nb(cases_per_cen ~ test.incidence + EPL_POV + EPL_UNEMP + EPL_AGE65 + 
-  #           EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE + EPL_NOVEH,
-  #         data=x)
-  #}
-  #)
-  
-  #view output
-  #lapply(mod5, function(x){
-  #  summary(x)
-  #}
-  #)
-  
-  #trial<-list(listOut,mod5)
-  
-  #predict 
-  #predict_miss<-lapply(trial, function(x){
-  #  predict(x[[2]], newdata = x[[1]], type = "response")
-  #}
-  #) 
