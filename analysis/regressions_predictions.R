@@ -153,28 +153,29 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     
     #exclude sampled rows from dataset
     dfIn<-data[!(data$GEO_ID %in% dfOut$GEO_ID),]
-    dfIn<-dfIn[2:20]
+    #dfIn<-dfIn[2:20]
     
-    #AIC of hold out (?) leave in??
-    mod<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+    #AIC of hold out (?) switched to poisson due to warnings
+    mod<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
                   EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
                   EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
                   offset(log(total_pop/100000)),
-                data=dfIn)
+                family = 'poisson',
+                data=dfOut)
    
     #find model using stepAIC
     opt_mod<-stepAIC(mod)
    
     #generate predictions and bind to leave out
-    dfOut$pred<-predict(opt_mod, newdata = dfOut, type = "response")
+    dfIn$pred<-predict(opt_mod, newdata = dfIn, type = "response")
     #drop covariates
-    dfOut<-subset(dfOut,select = c("GEO_ID","cases_per_cen","pred"))
+    dfIn<-subset(dfIn,select = c("GEO_ID","cases_per_cen","pred"))
     
     #extract coefficients
     coef1<-coef(opt_mod)
     
     #return list
-    out.list<-list("coef"=coef1,"pred.df"=dfOut)
+    out.list<-list("coef"=coef1,"pred.df"=dfIn)
     
 
     
@@ -189,106 +190,57 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   
 ################################################################################
   
-#create list of 10 datasets of in sample and out of sample
+#create list of predicted/observed values and coefficients
   result <- replicate(10, mod_estim(mod_count),simplify = FALSE)
   
-  #create list of out of sample and in samples
-  listOut <- lapply(result, "[[", 1)
-  listIn <- lapply(result, "[[", 2)
   
-  #AIC of hold out
-    x<-lapply(listOut, function(x){
-                 mod<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                                EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                                EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
-                              offset(log(total_pop/100000)),
-                              data=x)
-                y<-stepAIC(mod)
-                z<-list(y$call,y$aic)
-              }
-            )
   
-  #try predicting with model in lapply 
-  predict_miss<-lapply(result, function(x){
-        mod6<-glm.nb(cases_per_cen ~ test.incidence + EPL_UNEMP + EPL_AGE65 + 
-                       EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_GROUPQ + EP_UNINSUR + 
-                     offset(log(total_pop/1e+05)),
-                  data=x[[2]])
-        predict(mod6, newdata = x[[1]], type = "response")
-      }
-    ) 
-  
-#create dataset to compare predicted and out of sample values
-  hm<-as.data.frame(unlist(lapply(listOut,function(x) x[,1])))
-  names(hm)[names(hm) == "unlist(lapply(listOut, function(x) x[, 1]))"] <- "GEO_ID"
-  hm$mod<-unlist(predict_miss) #NAs being introduced
-  hm$out.samp<-unlist(lapply(listOut,function(x) x[,2]))
+  coefs<-sapply(result,"[[","coef")
+  coefs<-bind_rows(coefs)
+  ungroup(coefs)
  
+  #count NAs across columns for ?
+  sort(apply(coefs,2,function(x){
+    sum(is.na(x))
+      }
+    ))
   
-  #mean absolute error for each dataset
-  maeSub<-lapply(listOut, "[", , "cases_per_cen")
-  pred_vec<-lapply(predict_miss,as.vector)
+  #pull list of predicted and observed values
+  pred.df<-lapply(result,"[[","pred.df")
+
+  
+  
+  #flatten pred.df into one dataset and add new column that designates index in list
+  pred.df<-bind_rows(pred.df)
+  pred.df$index<-rep(1:10, each = 203)
+  
+  plot<-pred.df
+  #grid of ten different predicted vs. observed
+  ggplot(plot,aes(cases_per_cen, pred)) +
+    geom_point() +
+    geom_abline(slope = 1, color = "red") +
+    facet_wrap(~index)
+  
+  #only look at 1, 4, 5, 7, 9
+  plot2<-plot %>%
+          filter(index == 1 | index == 4 | index == 5 |
+                 index == 7 | index == 9)
+  
+  ggplot(plot2,aes(cases_per_cen, pred)) +
+    geom_point() +
+    geom_abline(slope = 1, color = "red") +
+    facet_wrap(~index)
+  #funnel-shaped??
   
   #mean absolute error
-  maeres<-NULL
-  for(i in 1:10){
-    x2<-mae(maeSub[[i]],pred_vec[[i]])
-    maeres<-c(maeres,x2)
-  }
-   
-#plot modeled vs. actual
-  p1<-ggplot(hm, aes(x=mod, y=out.samp)) + 
-        geom_point() +
-        geom_abline(slope = 1, color = "red") +
-        xlab("predicted") +
-        ylab("observed") +
-        labs(caption = "not log-transformed") +
-        theme_classic()
+  library(data.table)
+  pred.dt<-data.table(pred.df)
+  mae1<-as.data.frame(pred.dt[, mae(cases_per_cen, pred), by = index])
   
-#correlogram
-  m<-na.omit(hm)
-  m<-cor(m[,2:3])
-  corrplot(m,method = "number")
+#correlation
+  pred.dt[, cor(x=cases_per_cen, y=pred), by = index]
+
 
   
                         
-  
-#try with log transformed data
-  predict_miss_log<-lapply(result, function(x){
-    mod6<-glm(log(cases_per_cen) ~ test.incidence + EPL_POV + 
-                EPL_AGE65 + offset(log(total_pop/1e+05)),
-              data=x[[2]])
-    pred<-exp(predict(mod6, newdata = x[[1]], type = "response"))
-    }
-  ) 
-
-#create dataset to compare predicted and out of sample values
-  log_hm<-hm
-  log_hm$mod<-NULL
-  log_hm$mod<-unlist(predict_miss_log)
-    
-  #plot modeled vs. actual
-  p2<-ggplot(log_hm, aes(x=mod, y=out.samp)) + 
-        geom_point() +
-        geom_abline(slope = 1, color = "red") +
-        labs(caption = "log-transformed") +
-        theme_classic()
-  
-  #correlogram
-  m<-na.omit(log_hm)
-  m<-cor(m[,2:3])
-  corrplot(m,method = "number")
-  
-  
-#graph of no log transformed and log transformed
-  gridExtra::grid.arrange(p1,p2,ncol=2)
-  
-  
-
-  
-  
-  
-  
-  
-  
   
