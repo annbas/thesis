@@ -113,23 +113,21 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #Residual deviance: 232.08  on 206  degrees of freedom
   
   #null model
-  null_mod<-glm.nb(cases_per_cen~total_pop+test.incidence+
-                     offset(log(total_pop/100000)),
+  null_mod<-glm.nb(cases_per_cen~log(total_pop),
                    data=mod_count)
   summary(null_mod)
   
 #poisson with log transformed data
-  mod4<-glm(log(cases_per_cen)~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-              EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-              EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
-            family = 'poisson',
-            offset=log(total_pop/100000),
-            data=mod_count)
+  mod4<-glm.nb(log(cases_per_cen)~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                  EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                  EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+                offset(log(total_pop/100000)),
+                data=mod_count)
   summary(mod4)
   plot(mod4$residuals)
   
 #find optimal model using AIC
-  optimal_model<-stepAIC(mod3)
+  optimal_model<-stepAIC(mod4)
   summary(optimal_model)
   #AIC of null mod vs. optimal mod
   AIC(null_mod)
@@ -140,7 +138,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 ################################################################################
  
   #function that creates a dataset with 10% missing data
-  miss<-function(data){
+  mod_estim<-function(data){
     
     #add back census id
     data<-cbind(ir[1],data)
@@ -148,24 +146,51 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     #set.seed(123) ??
     
     #randomly sample 10% of rows
-    x1<-data %>% 
+    dfOut<-data %>% 
          sample_frac(.1)
     
-    ungroup(x1)
+    ungroup(dfOut)
     
-    #exclude sampled rows from datset
-    x2<-data[!(data$GEO_ID %in% x1$GEO_ID),]
-    x2<-x2[2:20]
+    #exclude sampled rows from dataset
+    dfIn<-data[!(data$GEO_ID %in% dfOut$GEO_ID),]
+    dfIn<-dfIn[2:20]
     
-    #create list of 
-    list(x1,x2)
+    #AIC of hold out (?) leave in??
+    mod<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
+                  EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
+                  EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+                  offset(log(total_pop/100000)),
+                data=dfIn)
+   
+    #find model using stepAIC
+    opt_mod<-stepAIC(mod)
+   
+    #generate predictions and bind to leave out
+    dfOut$pred<-predict(opt_mod, newdata = dfOut, type = "response")
+    #drop covariates
+    dfOut<-subset(dfOut,select = c("GEO_ID","cases_per_cen","pred"))
     
-  }
+    #extract coefficients
+    coef1<-coef(opt_mod)
+    
+    #return list
+    out.list<-list("coef"=coef1,"pred.df"=dfOut)
+    
+
+    
+    #stepAIC for each hold out
+    #generate predictions
+    #merge with original dataset
+    #drop rows from hold out
+    #extract coefficients (coef())
+    
+  }  
+  
   
 ################################################################################
   
 #create list of 10 datasets of in sample and out of sample
-  result <- replicate(10, miss(mod_count),simplify = FALSE)
+  result <- replicate(10, mod_estim(mod_count),simplify = FALSE)
   
   #create list of out of sample and in samples
   listOut <- lapply(result, "[[", 1)
@@ -196,7 +221,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 #create dataset to compare predicted and out of sample values
   hm<-as.data.frame(unlist(lapply(listOut,function(x) x[,1])))
   names(hm)[names(hm) == "unlist(lapply(listOut, function(x) x[, 1]))"] <- "GEO_ID"
-  hm$mod<-unlist(predict_miss)
+  hm$mod<-unlist(predict_miss) #NAs being introduced
   hm$out.samp<-unlist(lapply(listOut,function(x) x[,2]))
  
   
@@ -212,13 +237,13 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   }
    
 #plot modeled vs. actual
-  ggplot(hm, aes(x=mod, y=out.samp)) + 
-    geom_point() +
-    geom_abline(slope = 1, color = "red") +
-    xlab("predicted") +
-    ylab("observed") +
-    labs(caption = "not log-transformed") +
-    theme_classic()
+  p1<-ggplot(hm, aes(x=mod, y=out.samp)) + 
+        geom_point() +
+        geom_abline(slope = 1, color = "red") +
+        xlab("predicted") +
+        ylab("observed") +
+        labs(caption = "not log-transformed") +
+        theme_classic()
   
 #correlogram
   m<-na.omit(hm)
@@ -231,9 +256,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 #try with log transformed data
   predict_miss_log<-lapply(result, function(x){
     mod6<-glm(log(cases_per_cen) ~ test.incidence + EPL_POV + 
-                EPL_UNEMP + EPL_PCI + EPL_NOHSDP + EPL_AGE65 + EPL_AGE17 + 
-                EPL_DISABL + EPL_SNGPNT + EPL_MINRTY + EPL_LIMENG + EPL_MUNIT + 
-                EPL_MOBILE + EPL_CROWD + EPL_NOVEH + EPL_GROUPQ + EP_UNINSUR,
+                EPL_AGE65 + offset(log(total_pop/1e+05)),
               data=x[[2]])
     pred<-exp(predict(mod6, newdata = x[[1]], type = "response"))
     }
@@ -245,11 +268,11 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   log_hm$mod<-unlist(predict_miss_log)
     
   #plot modeled vs. actual
-  ggplot(log_hm, aes(x=mod, y=out.samp)) + 
-    geom_point() +
-    geom_abline(slope = 1, color = "red") +
-    labs(caption = "log-transformed") +
-    theme_classic()
+  p2<-ggplot(log_hm, aes(x=mod, y=out.samp)) + 
+        geom_point() +
+        geom_abline(slope = 1, color = "red") +
+        labs(caption = "log-transformed") +
+        theme_classic()
   
   #correlogram
   m<-na.omit(log_hm)
@@ -257,6 +280,8 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   corrplot(m,method = "number")
   
   
+#graph of no log transformed and log transformed
+  gridExtra::grid.arrange(p1,p2,ncol=2)
   
   
 
