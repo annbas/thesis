@@ -1,11 +1,8 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
-library(tidyr)
-library(dplyr)
-library(purrr)
+library(tidyverse)
 #install.packages("Hmisc")
 library(Hmisc)
-library(ggplot2)
 library(corrplot)
 #install.packages("e1071")
 library(e1071)
@@ -14,6 +11,9 @@ library(MASS)
 #install.packages("plyr")
 library(plyr)
 library(Metrics)
+#install.packages("BMA")
+library(BMA)
+source("Z:/FluSurv-NET/COVID-19/Ann/Thesis/thesis/analysis/mod_functions.R")
 
 
 #read in data
@@ -86,7 +86,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   corrplot(cov_cor, order = 'AOE')
   
   
-####### regressions #####
+##### regressions #####
    
 #using hosp count instead?
   mod_count<-cbind(ir[2],mod_sc[2:19])
@@ -112,10 +112,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   plot(mod3$residuals)
   #Residual deviance: 232.08  on 206  degrees of freedom
   
-  #null model
-  null_mod<-glm.nb(cases_per_cen~log(total_pop),
-                   data=mod_count)
-  summary(null_mod)
   
 #poisson with log transformed data
   mod4<-glm.nb(log(cases_per_cen)~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
@@ -127,92 +123,42 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   plot(mod4$residuals)
   
 #find optimal model using AIC
-  optimal_model<-stepAIC(mod4)
+  optimal_model<-stepAIC(mod3)
   summary(optimal_model)
   #AIC of null mod vs. optimal mod
   AIC(null_mod)
   AIC(optimal_model)
 
   
-
-################################################################################
  
-  #function that creates a dataset with 10% missing data
-  mod_estim<-function(data){
-    
-    #add back census id
-    data<-cbind(ir[1],data)
-    
-    #set.seed(123) ??
-    
-    #randomly sample 10% of rows
-    dfOut<-data %>% 
-         sample_frac(.1)
-    
-    ungroup(dfOut)
-    
-    #exclude sampled rows from dataset
-    dfIn<-data[!(data$GEO_ID %in% dfOut$GEO_ID),]
-    #dfIn<-dfIn[2:20]
-    
-    #AIC of hold out (?) switched to poisson due to warnings
-    mod<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                  EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                  EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
-                  offset(log(total_pop/100000)),
-                family = 'poisson',
-                data=dfOut)
-   
-    #find model using stepAIC
-    opt_mod<-stepAIC(mod)
-   
-    #generate predictions and bind to leave out
-    dfIn$pred<-predict(opt_mod, newdata = dfIn, type = "response")
-    #drop covariates
-    dfIn<-subset(dfIn,select = c("GEO_ID","cases_per_cen","pred"))
-    
-    #extract coefficients
-    coef1<-coef(opt_mod)
-    
-    #return list
-    out.list<-list("coef"=coef1,"pred.df"=dfIn)
-    
-
-    
-    #stepAIC for each hold out
-    #generate predictions
-    #merge with original dataset
-    #drop rows from hold out
-    #extract coefficients (coef())
-    
-  }  
-  
-  
-################################################################################
-  
+##### AIC of each dataset and analysis #####
 #create list of predicted/observed values and coefficients
-  result <- replicate(10, mod_estim(mod_count),simplify = FALSE)
+  out_pois <- replicate(10, fitout_pois(mod_count),simplify = FALSE)
+  out_nb <- replicate(10, fitout_nb(mod_count),simplify = FALSE)
+  in_nb <- replicate(10, fitin_nb(mod_count),simplify = FALSE)
+  #in_pois <- replicate(10, fitin_pois(mod_count),simplify = FALSE)
   
   
   
-  coefs<-sapply(result,"[[","coef")
+  coefs<-sapply(in_nb,"[[","coef")
   coefs<-bind_rows(coefs)
   ungroup(coefs)
  
-  #count NAs across columns for ?
+  #count how many times coefficient appeared in each dataset
   sort(apply(coefs,2,function(x){
-    sum(is.na(x))
+    10-sum(is.na(x))
       }
-    ))
+    ), decreasing = TRUE)
+  
+  #get mean of each column
+  sort(apply(coefs,2,mean))
   
   #pull list of predicted and observed values
-  pred.df<-lapply(result,"[[","pred.df")
-
-  
+  pred.df<-lapply(in_nb,"[[","pred.df")
   
   #flatten pred.df into one dataset and add new column that designates index in list
   pred.df<-bind_rows(pred.df)
-  pred.df$index<-rep(1:10, each = 203)
+  pred.df$index<-rep(1:10, each = 22)
   
   plot<-pred.df
   #grid of ten different predicted vs. observed
@@ -221,15 +167,14 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     geom_abline(slope = 1, color = "red") +
     facet_wrap(~index)
   
-  #only look at 1, 4, 5, 7, 9
+  #only look at 10
   plot2<-plot %>%
-          filter(index == 1 | index == 4 | index == 5 |
-                 index == 7 | index == 9)
+          filter(index == 10)
   
   ggplot(plot2,aes(cases_per_cen, pred)) +
     geom_point() +
-    geom_abline(slope = 1, color = "red") +
-    facet_wrap(~index)
+    geom_abline(slope = 1, color = "red") 
+    #facet_wrap(~index)
   #funnel-shaped??
   
   #mean absolute error
@@ -239,8 +184,130 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   
 #correlation
   pred.dt[, cor(x=cases_per_cen, y=pred), by = index]
-
-
   
-                        
   
+##### adding to null model #####
+  #null model
+    null_mod<-glm.nb(cases_per_cen~log(total_pop),
+                     data=mod_count)
+    AIC(null_mod)
+    #1800.888
+    
+  #add in EPL_AGE65 (next best)
+    modA<-glm.nb(cases_per_cen~EPL_AGE65+
+                   offset(log(total_pop/100000)),
+                     data=mod_count)
+    AIC(modA)
+    #1800.4
+    
+  #take out EPL_AGE65, add in EPL_MINRTY
+    modB<-glm.nb(cases_per_cen~EPL_MINRTY+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modB)
+    #1728.461
+    
+  #Add EPL_AGE65 back in
+    modC<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modC)
+    #1678.894
+    
+  #Add testing
+    modD<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+test.incidence+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modD) 
+    #1637.849
+    
+  #Add EPL_SNGPNT
+    modE<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                   test.incidence+EPL_SNGPNT+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modE) 
+    #1630.707
+    
+  #Add EPL_GROUPQ
+    modF<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                   test.incidence+EPL_SNGPNT+EPL_GROUPQ+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modF)
+    #1616.643
+    
+  #Add EP_UNINSUR
+    modG<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+test.incidence+
+                   EPL_SNGPNT+EPL_GROUPQ+EP_UNINSUR+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modG)
+    #1611.601
+    
+  #Add EPL_MUNIT
+    modH<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                   test.incidence+EPL_SNGPNT+EPL_GROUPQ+EP_UNINSUR+
+                   EPL_MUNIT+offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modH)
+    #1608.484
+    
+  #Add EPL_UNEMP
+    modI<-glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                   test.incidence+EPL_SNGPNT+EPL_GROUPQ+EP_UNINSUR+
+                   EPL_MUNIT+EPL_UNEMP+
+                   offset(log(total_pop/100000)),
+                 data=mod_count)
+    AIC(modI)
+    #1605.432
+    
+##### fit 10 datasets to opt mod #####
+    optList <- replicate(10, fit_optmod(mod_count),simplify = FALSE)
+    
+    #pull list of predicted and observed values
+    pred.df.opt<-lapply(optList,"[[","pred.df")
+    
+    #flatten pred.df into one dataset and add new column that designates index in list
+    pred.df.opt<-bind_rows(pred.df.opt)
+    pred.df.opt$index<-rep(1:10, each = 22)
+    
+    plot2<-pred.df.opt
+    #grid of ten different predicted vs. observed
+    p1<-ggplot(plot2,aes(cases_per_cen, pred)) +
+          geom_point() +
+          geom_abline(slope = 1, color = "red") +
+          facet_wrap(~index)
+    
+    #all on one
+    p2<-ggplot(plot2,aes(cases_per_cen, pred)) +
+          geom_point() +
+          theme_classic() +
+          geom_abline(slope = 1, color = "red")
+
+    
+##### look at outlier data #####
+    #add back census id
+    full_dat<-cbind(ir[1],mod_count)
+    
+    #pull five highest values
+    badfit <- pred.df.opt %>%                                      
+      arrange(desc(cases_per_cen)) %>% 
+      slice(1:5)
+    
+    #extract geo id
+    geo<-badfit$GEO_ID
+    
+    #filter
+    outlier<-filter(full_dat, GEO_ID %in% geo)
+    
+    #see what towns they're in
+    town<-read.csv("tract2town-2010.csv")
+    filter(town, ï..tract_fips %in% geo)
+    
+##### see what bic.glm says #####
+    x<-data.frame(mod_count[,-(1:2)])
+    y<-mod_count$cases_per_cen
+    bic.glm(x, y, strict = TRUE, OR = 20, 
+            glm.family="negbinom", factor.type=TRUE) #doesn't recognize neg binom
+    
