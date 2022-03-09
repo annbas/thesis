@@ -125,16 +125,14 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 #find optimal model using AIC
   optimal_model<-stepAIC(mod3)
   summary(optimal_model)
-  #AIC of null mod vs. optimal mod
-  AIC(null_mod)
   AIC(optimal_model)
 
   
  
 ##### AIC of each dataset and analysis #####
 #create list of predicted/observed values and coefficients
-  out_pois <- replicate(10, fitout_pois(mod_count),simplify = FALSE)
-  out_nb <- replicate(10, fitout_nb(mod_count),simplify = FALSE)
+  #out_pois <- replicate(10, fitout_pois(mod_count),simplify = FALSE)
+  #out_nb <- replicate(10, fitout_nb(mod_count),simplify = FALSE)
   in_nb <- replicate(10, fitin_nb(mod_count),simplify = FALSE)
   #in_pois <- replicate(10, fitin_pois(mod_count),simplify = FALSE)
   
@@ -143,6 +141,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   coefs<-sapply(in_nb,"[[","coef")
   coefs<-bind_rows(coefs)
   ungroup(coefs)
+  
  
   #count how many times coefficient appeared in each dataset
   sort(apply(coefs,2,function(x){
@@ -151,7 +150,7 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     ), decreasing = TRUE)
   
   #get mean of each column
-  sort(apply(coefs,2,mean))
+  sort(apply(coefs,2,mean,na.rm=T))
   
   #pull list of predicted and observed values
   pred.df<-lapply(in_nb,"[[","pred.df")
@@ -160,21 +159,20 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   pred.df<-bind_rows(pred.df)
   pred.df$index<-rep(1:10, each = 22)
   
-  plot<-pred.df
   #grid of ten different predicted vs. observed
-  ggplot(plot,aes(cases_per_cen, pred)) +
-    geom_point() +
-    geom_abline(slope = 1, color = "red") +
-    facet_wrap(~index)
+  p1 <- ggplot(pred.df,aes(cases_per_cen, pred)) +
+          geom_point() +
+          geom_abline(slope = 1, color = "red") +
+          facet_wrap(~index)
   
-  #only look at 10
+  #look at 4 & 10
   plot2<-plot %>%
-          filter(index == 10)
+          filter(index == 4 | index == 10)
   
   ggplot(plot2,aes(cases_per_cen, pred)) +
     geom_point() +
-    geom_abline(slope = 1, color = "red") 
-    #facet_wrap(~index)
+    geom_abline(slope = 1, color = "red") + 
+    facet_wrap(~index)
   #funnel-shaped??
   
   #mean absolute error
@@ -261,29 +259,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
                  data=mod_count)
     AIC(modI)
     #1605.432
-    
-##### fit 10 datasets to opt mod #####
-    optList <- replicate(10, fit_optmod(mod_count),simplify = FALSE)
-    
-    #pull list of predicted and observed values
-    pred.df.opt<-lapply(optList,"[[","pred.df")
-    
-    #flatten pred.df into one dataset and add new column that designates index in list
-    pred.df.opt<-bind_rows(pred.df.opt)
-    pred.df.opt$index<-rep(1:10, each = 22)
-    
-    plot2<-pred.df.opt
-    #grid of ten different predicted vs. observed
-    p1<-ggplot(plot2,aes(cases_per_cen, pred)) +
-          geom_point() +
-          geom_abline(slope = 1, color = "red") +
-          facet_wrap(~index)
-    
-    #all on one
-    p2<-ggplot(plot2,aes(cases_per_cen, pred)) +
-          geom_point() +
-          theme_classic() +
-          geom_abline(slope = 1, color = "red")
 
     
 ##### look at outlier data #####
@@ -305,9 +280,118 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     town<-read.csv("tract2town-2010.csv")
     filter(town, ï..tract_fips %in% geo)
     
-##### see what bic.glm says #####
-    x<-data.frame(mod_count[,-(1:2)])
-    y<-mod_count$cases_per_cen
-    bic.glm(x, y, strict = TRUE, OR = 20, 
-            glm.family="negbinom", factor.type=TRUE) #doesn't recognize neg binom
+    #9009350100 (Waterbury) being overestimated a ton
+    
+    
+    
+    
+###### convert counts to rates and re-plot #####
+    
+    #merge total pop of each census tract to pred.df
+    tot <- subset(ir, select = c("GEO_ID","total_pop"))
+    pred.df.rate <- merge(pred.df, tot, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+    pred.df.rate$observed.rate <- (pred.df.rate$cases_per_cen/pred.df.rate$total_pop)*100000
+    pred.df.rate$predicted.rate <- (pred.df.rate$pred/pred.df.rate$total_pop)*100000
+    
+    #grid of ten different predicted vs. observed
+    p2 <- ggplot(pred.df.rate,aes(observed.rate, predicted.rate)) +
+            geom_point() +
+            geom_abline(slope = 1, color = "red") +
+            facet_wrap(~index)
+    
+    #look at rate and count side by side
+    gridExtra::grid.arrange(p1,p2,ncol=2)
+    
+    #correlation
+    pred.dt.rate <- data.table(pred.df.rate)
+    pred.dt.rate[, cor(x=cases_per_cen, y=pred), by = index]
+    
+    
+##### matrix multiplication to find optimal model #####
+    
+    #convert NAs to 0
+    coefs[is.na(coefs)] <- 0
+    
+    #create a model matrix and do matrix multiplication by coef
+    mod.mat <- model.matrix(~test.incidence + EPL_AGE65 + EPL_DISABL + 
+                              EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE +
+                              EPL_GROUPQ + EP_UNINSUR + EPL_LIMENG + EPL_UNEMP,
+                            data = mod_count)
+    
+    coefs.mat <- as.matrix(coefs)
+    
+    data<-data.frame(NA_col = rep(NA, 225))
+    #for loop to create matrix 
+    for(i in 1:10){
+      new<-mod.mat %*% coefs.mat[i,] + log(mod_count$total_pop/100000) #is my intercept term the offset or is it something else
+      data[ , i] <- new                     
+      colnames(data)[i] <- paste0("V", i) 
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+##### predict for state ##### 
+    
+    #create dph dataset for model
+      #read in state hosp data
+      dph_hosp <- read.csv("dph2020_IR_FIPS.csv")
+      names(dph_hosp)[names(dph_hosp) == "cases_per_cen"] <- "dph_hosp_count"
+      
+      #merge with test
+      dph_hosp <- merge(dph_hosp, test, by = "GEO_ID", all.x = FALSE, all.y = TRUE)
+      
+      #subset svi and merge
+      svi.sub <- subset(svi,select=c("FIPS", e_name_unin))
+      dph_hosp <- merge(dph_hosp, svi.sub, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE)
+      
+      
+    #scale
+    dph_hosp <- cbind(dph_hosp[1:4],apply(dph_hosp[5:21],2, scale))
+    
+    #fit to covid-net data
+    mod.fit <- glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
+                       test.incidence+EPL_SNGPNT+EPL_GROUPQ+EP_UNINSUR+
+                       EPL_MUNIT+EPL_UNEMP+
+                       offset(log(total_pop/100000)),
+                     data=mod_count)              #mod_count is leave in sample
+    
+    #drop covid-net census tracts
+    outsamp <- dph_hosp[!(dph_hosp$GEO_ID %in% ir$GEO_ID),]
+    
+    #predict and bind to outsamp
+    outsamp$pred <- predict(mod.fit, newdata = outsamp, type = "response")
+    
+    #drop covariates
+    dph.pred<-subset(outsamp,select = c("GEO_ID","dph_hosp_count","pred","total_pop"))
+    
+    #first check of sums
+    sum(dph.pred$pred, na.rm = T) - sum(dph.pred$dph_hosp_count,na.rm = T)
+    
+    #convert to rates
+    dph.pred$observed.rate <- (dph.pred$dph_hosp_count/dph.pred$total_pop)*100000
+    dph.pred$predicted.rate <- (dph.pred$pred/dph.pred$total_pop)*100000
+    
+    #linmod to check
+    linmod<-lm(observed.rate~predicted.rate, data = dph.pred)
+    summary(linmod)
+    #intercept = -2.76
+    
+    #look at plot
+    ggplot(dph.pred,aes(observed.rate, predicted.rate)) +
+      geom_point() +
+      geom_abline(slope = 1, color = "red") 
+    
+    
+    sum(is.na(dph.pred$dph_hosp_count))
+    sum(is.na(dph.pred$pred))
     

@@ -260,3 +260,10 @@ fit_optmod<-function(data){
 }
 
 
+
+
+
+
+
+
+
