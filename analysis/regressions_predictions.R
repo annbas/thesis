@@ -131,13 +131,10 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
  
 ##### AIC of each dataset and analysis #####
 #create list of predicted/observed values and coefficients
-  #out_pois <- replicate(10, fitout_pois(mod_count),simplify = FALSE)
-  #out_nb <- replicate(10, fitout_nb(mod_count),simplify = FALSE)
+  set.seed(123)
   in_nb <- replicate(10, fitin_nb(mod_count),simplify = FALSE)
-  #in_pois <- replicate(10, fitin_pois(mod_count),simplify = FALSE)
   
-  
-  
+  #pull out coefficients
   coefs<-sapply(in_nb,"[[","coef")
   coefs<-bind_rows(coefs)
   ungroup(coefs)
@@ -307,38 +304,6 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     pred.dt.rate[, cor(x=cases_per_cen, y=pred), by = index]
     
     
-##### matrix multiplication to find optimal model #####
-    
-    #convert NAs to 0
-    coefs[is.na(coefs)] <- 0
-    
-    #create a model matrix and do matrix multiplication by coef
-    mod.mat <- model.matrix(~test.incidence + EPL_AGE65 + EPL_DISABL + 
-                              EPL_SNGPNT + EPL_MINRTY + EPL_MUNIT + EPL_MOBILE +
-                              EPL_GROUPQ + EP_UNINSUR + EPL_LIMENG + EPL_UNEMP,
-                            data = mod_count)
-    
-    coefs.mat <- as.matrix(coefs)
-    
-    data<-data.frame(NA_col = rep(NA, 225))
-    #for loop to create matrix 
-    for(i in 1:10){
-      new<-mod.mat %*% coefs.mat[i,] + log(mod_count$total_pop/100000) #is my intercept term the offset or is it something else
-      data[ , i] <- new                     
-      colnames(data)[i] <- paste0("V", i) 
-    }
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
 ##### predict for state ##### 
     
@@ -355,43 +320,80 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
       dph_hosp <- merge(dph_hosp, svi.sub, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE)
       
       
-    #scale
+    #scale (?)
     dph_hosp <- cbind(dph_hosp[1:4],apply(dph_hosp[5:21],2, scale))
     
-    #fit to covid-net data
-    mod.fit <- glm.nb(cases_per_cen~EPL_MINRTY+EPL_AGE65+
-                       test.incidence+EPL_SNGPNT+EPL_GROUPQ+EP_UNINSUR+
-                       EPL_MUNIT+EPL_UNEMP+
-                       offset(log(total_pop/100000)),
-                     data=mod_count)              #mod_count is leave in sample
+    #predict based on coef dataset
+    all.covars <- paste(names(coefs)[-1], collapse='+')
     
-    #drop covid-net census tracts
-    outsamp <- dph_hosp[!(dph_hosp$GEO_ID %in% ir$GEO_ID),]
+    form1 <- as.formula(paste0('~',all.covars))
     
-    #predict and bind to outsamp
-    outsamp$pred <- predict(mod.fit, newdata = outsamp, type = "response")
+    dph_hosp2 <- na.omit(dph_hosp)
+    coefs[is.na(coefs)] <- 0
+    
+    mod.mat1 <- model.matrix(form1, data=dph_hosp2)
+    
+    ave.coefs <- apply(coefs,2,mean)
+    
+    dph_hosp2$preds <- as.vector(exp(mod.mat1 %*% ave.coefs + log(dph_hosp2$total_pop/100000)))
     
     #drop covariates
-    dph.pred<-subset(outsamp,select = c("GEO_ID","dph_hosp_count","pred","total_pop"))
+    dph.pred<-subset(dph_hosp2,select = c("GEO_ID","dph_hosp_count","preds","total_pop"))
+    
     
     #first check of sums
-    sum(dph.pred$pred, na.rm = T) - sum(dph.pred$dph_hosp_count,na.rm = T)
+    sum(dph.pred$preds) - sum(dph.pred$dph_hosp_count)
     
     #convert to rates
     dph.pred$observed.rate <- (dph.pred$dph_hosp_count/dph.pred$total_pop)*100000
-    dph.pred$predicted.rate <- (dph.pred$pred/dph.pred$total_pop)*100000
+    dph.pred$predicted.rate <- (dph.pred$preds/dph.pred$total_pop)*100000
+    
+    #pull out NHV and MS
+    noNHVMS<-dph.pred[!(dph.pred$GEO_ID %in% ir$GEO_ID),]
+    NHVMS <- dph.pred[(dph.pred$GEO_ID %in% ir$GEO_ID),]
     
     #linmod to check
-    linmod<-lm(observed.rate~predicted.rate, data = dph.pred)
+    linmod<-lm(observed.rate~predicted.rate, data = noNHVMS)
     summary(linmod)
-    #intercept = -2.76
+    #intercept = -1.7217
     
-    #look at plot
-    ggplot(dph.pred,aes(observed.rate, predicted.rate)) +
-      geom_point() +
-      geom_abline(slope = 1, color = "red") 
+    #look at plots
+    p1<-ggplot(noNHVMS,aes(observed.rate, predicted.rate)) +
+          geom_point() +
+          geom_abline(slope = 1, color = "red") +
+          ggtitle("Observed vs. Predicted Rates", subtitle = "for census tracts outside of the COVID-NET catchment area")
     
+    p2<-ggplot(NHVMS,aes(observed.rate, predicted.rate)) +
+          geom_point() +
+          geom_abline(slope = 1, color = "red") +
+          ggtitle("Observed vs. Predicted Rates", subtitle = "for census tracts in the COVID-NET catchment area")
     
-    sum(is.na(dph.pred$dph_hosp_count))
-    sum(is.na(dph.pred$pred))
+    p3<-gridExtra::grid.arrange(p1,p2,ncol=2)
+    
+    #try one plot with different colors
+    plot<-dph.pred
+    catch<-ir$GEO_ID
+    plot$legend<-ifelse(dph.pred$GEO_ID %in% catch,c("in catchment"),c("out of catchment"))
+    
+    p4<-ggplot(plot,aes(observed.rate, predicted.rate,color=legend)) +
+          geom_point(alpha=0.5) +
+          geom_abline(slope = 1, color = "red") +
+          theme_bw() +
+          xlab("observed rate") + ylab("predicted rate") +
+          scale_color_manual(values = c("#2C7096","#E69833"))
+    
+    #try with grouping by county
+    census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
+    census <- census[-1,] 
+    census <- census[c("GEO_ID","NAME")]
+    census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
+    plot2<-merge(dph.pred,census,all.x = TRUE, all.y = FALSE)
+    
+    p5<-ggplot(plot2,aes(observed.rate, predicted.rate,color=county)) +
+          geom_point(alpha=0.6) +
+          geom_abline(slope = 1, color = "red") +
+          theme_bw() +
+          xlab("observed rate") + ylab("predicted rate") 
+          #scale_color_manual(values = c("#2C7096","#E69833"))
+    
     
