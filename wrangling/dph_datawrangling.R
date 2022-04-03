@@ -1,25 +1,39 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
+library(reshape2)
+library(tidyverse)
+
 dph<-read.csv("covid_positive_tests_hospitalizations.csv")
 
 #create separate datasets for testing and hospitalizations
-  test<-dph[,c(1:31)]
+  test<-dph[,c(1:2,6:31)]
   
-  hosp<-dph[,c(1:5,32:40)]
+  hosp<-dph[,c(1:2,32:40)]
   hosp<-subset(hosp,hospital_admission == c("Y"))
-
-
-### TESTING ###
-#melt to long on testing data
-  #install.packages("reshape2")
-  library(reshape2)
   
-  test_long<-melt(test, id.vars=c("id", "geoid10","age_group","gender","hisp_race"),na.rm = TRUE)
+  
+#create denominators
+  cen_pop<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
+  
+  #subset geo_id and total pop per census tract
+  cen_pop<-cen_pop[c("GEO_ID","P001001")]
+  
+  #rename columns
+  names(cen_pop)[names(cen_pop) == "P001001"] <- "total_pop"
+  
+  #delete first row (non-data)
+  cen_pop = cen_pop[-1,]
+
+
+##### TESTING #####
+#melt to long on testing data
   #na.rm = TRUE removes missings from value column
   #e.g. if someone did not have a 3rd, 4th, etc. positive test, then it was removed
   
+  test_long <- melt(test, id.vars=c("id", "geoid10"),na.rm = TRUE)
+  
+  
   #group by id and calculate time lag between positive tests
-    library(dplyr)
     
     test_diff<-test_long %>%
                  arrange(id) %>%
@@ -29,23 +43,43 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     ungroup(test_diff)
     
     #convert from tibble to df
-    test_diff<-as.data.frame(test_diff)
+      test_diff<-as.data.frame(test_diff)
     
     #create flag where test = "true" infection (i.e. lag between positive tests > 10 weeks)
-    test_diff$flag<-ifelse(test_diff$variable == c("week_of_positive_test_1"),1,
-                           ifelse(test_diff$diff>9,1,0))
+      test_diff$flag<-ifelse(test_diff$variable == c("week_of_positive_test_1"),1,
+                             ifelse(test_diff$diff>9,1,0))
+      
+  ###### Calculate dph testing ir ######
+    
+    dph_test_count<-aggregate(test_diff$flag ~ test_diff$geoid10, FUN=sum)
+    #2577 missing, 5481 NULL
+    
+    #rename columns
+      names(dph_test_count)[names(dph_test_count) == "test_diff$geoid10"] <- "GEO_ID"
+      names(dph_test_count)[names(dph_test_count) == "test_diff$flag"] <- "cases_per_cen"
+      
+    #remove 0 at front of census tract
+      dph_test_count$GEO_ID<-as.numeric(dph_test_count$GEO_ID)
+      dph_test_count$GEO_ID<-as.character(dph_test_count$GEO_ID)
+      
+    #merge with total pop dataset  
+      dph_test_inc<-merge(dph_test_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+    
+    #calculate incidence 
+      dph_test_inc$total_pop<-as.integer(dph_test_inc$total_pop)
+      dph_test_inc$incidence<-(dph_test_inc$cases_per_cen/dph_test_inc$total_pop)*100000
+      
+    #save dataset
+    write.csv(dph_test_inc,"dph2020_test_IR_FIPS.csv",row.names = FALSE)
     
     
-### HOSPITALIZATIONS ###  
+    
+    
+    
+    
+    
+##### HOSPITALIZATIONS #####  
   
-  #week number >50 for 2021? Might be something with melt
-    yr.fix <- function(week,year) {
-      ifelse(week >= 50, 2020, year)
-    }  
-    
-    hosp$year_of_admission_1 <- yr.fix(hosp$week_of_admission_1,hosp$year_of_admission_1)
-    hosp$year_of_admission_2 <- yr.fix(hosp$week_of_admission_2,hosp$year_of_admission_2)
-    
   #create new column with 53 + 2021 week number
     hosp$admit1<-ifelse(hosp$year_of_admission_1 == 2021, hosp$week_of_admission_1+53, hosp$week_of_admission_1)
     hosp$admit2<-ifelse(hosp$year_of_admission_2 == 2021, hosp$week_of_admission_2+53, hosp$week_of_admission_2)
@@ -59,14 +93,17 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     hosp<-hosp[,-which(names(hosp) %in% names(rem2))]
     
   #melt to long
-    hosp_long<-melt(hosp, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
+    hosp_long<-melt(hosp, id.vars=c("id", "geoid10","hospital_admission"),
                                       na.rm = TRUE,
                                       value.name = "admit.week",
                                       variable.name = "admit.number")
     
+  #remove rows with 2021 admits
+    hosp_long <- hosp_long[!(hosp_long$admit.week > 53),]
+    #dropped 184 rows
+    
   #group by id and calculate lag between hospitalizations
-  library(dplyr)
-    hosp_diff<-hosp_long %>%
+    hosp_diff <- hosp_long %>%
       arrange(id) %>%
       group_by(id) %>%
       mutate(diff = admit.week - lag(admit.week, default = first(admit.week)))
@@ -77,44 +114,34 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     hosp_diff<-as.data.frame(hosp_diff)
     
   #create flag for "true" hospitalizations (i.e. lag between hospitalizations > 2 weeks)
-    hosp_diff$flag<-ifelse(hosp_diff$admit.number == c("admit1"),1,
-                           ifelse(hosp_diff$diff>2,1,0))
+    hosp_diff$flag <- ifelse(hosp_diff$admit.number == c("admit1"), 1,
+                           ifelse(hosp_diff$diff > 2, 1, 0))
     
     
-  #hosp_yrfix$week.only<-ifelse(hosp_yrfix$year == 2021, hosp_yrfix$week+53, hosp_yrfix$week)
-  
-  #hosp_yrfix <- hosp_long2 %>%
-  #  mutate(year = ifelse(week >= 50, 2020, year))
     
-  #melt to long on hospitalization data
-  #hosp_long<-melt(hosp[,c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","year_of_admission_1","year_of_admission_2","year_of_admission_3","year_of_admission_4"),
-  #                na.rm = TRUE,
-  #                value.name = "week",
-  #                variable.name = "week.var")
-  
-  #hosp$date1 <-as.Date( paste0(hosp$year_of_admission_1,'-',hosp$week_of_admission_1,'-','1'), '%Y-%U-%u' )
-  
-  #hosp_long <- melt(hosp[,c('date1','date2','date3','date4',"id", "geoid10","age_group","gender","hisp_race","hospital_admission")], id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission"),
-  #                na.rm = TRUE)
+  ###### DPH HOSP IR ######
+    
 
-  
-  #melt again for year
-  #hosp_long2<-melt(hosp_long, id.vars=c("id", "geoid10","age_group","gender","hisp_race","hospital_admission","week.var","week"),
-  #                 na.rm = TRUE,
-  #                 value.name = "year")
-  #remove year variable column
-  #hosp_long2$variable<-NULL
-  
-  #remove duplicate rows
-  #hosp_long2<-hosp_long2 %>%
-  #              distinct(id, geoid10, age_group, gender, hisp_race, hospital_admission, week.var, week,
-  #                       .keep_all = TRUE)
-  
-  
-  
+    #create count of cases in each census tract
+    dph_hosp_count<-aggregate(hosp_diff$flag ~ hosp_diff$geoid10, FUN=sum)
+    #103 missing, 294 NULL
     
+    #rename columns
+    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$geoid10"] <- "GEO_ID"
+    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$flag"] <- "cases_per_cen"
     
+    #remove 0 at front of census tract
+    dph_hosp_count$GEO_ID<-as.numeric(dph_hosp_count$GEO_ID)
+    dph_hosp_count$GEO_ID<-as.character(dph_hosp_count$GEO_ID)
     
-  ####MMWRweek package
+    #merge with total pop dataset  
+    dph_hosp_inc<-merge(dph_hosp_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+    
+    #calculate incidence 
+    dph_hosp_inc$total_pop<-as.integer(dph_hosp_inc$total_pop)
+    dph_hosp_inc$incidence<-(dph_hosp_inc$cases_per_cen/dph_hosp_inc$total_pop)*100000
+    
+    #save dataset
+    write.csv(dph_hosp_inc,"dph2020_IR_FIPS2.csv",row.names = FALSE)
   
   

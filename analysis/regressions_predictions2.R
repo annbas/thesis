@@ -21,36 +21,28 @@ ir<-read.csv("covidnet2020_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv") 
 test<-read.csv("dph2020_test_IR_FIPS.csv")
 
-
 ##replace -999 with NA?
-  svi[svi == -999] <- NA
-  #count NAs in each column
-  apply(is.na(svi), MARGIN = 2, FUN = sum)
+svi[svi == -999] <- NA
+#count NAs in each column
+apply(is.na(svi), MARGIN = 2, FUN = sum)
 
 #sub FIPS and test in test
-test<-subset(test, select = c("GEO_ID","incidence"))
+#test <- subset(test, select = c("GEO_ID","incidence"))
 #change name
 names(test)[names(test) == "incidence"] <- "test.incidence"
 
-#merge test and hosp 
-ir_svi<-merge(ir, test, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
-names(ir_svi)[names(ir_svi) == "incidence"] <- "hosp.incidence"
-
-#merge SVI to incidence on FIPS
-ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE) #dataset with IR and SVI variables
+#merge test and SVI
+test_svi <- merge(test, svi, by = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE)
 
 
-  
-  #subset to include estimates from svi data
-  e_name<-ir_svi[,grep("^EPL_", colnames(ir_svi))]
-  e_name<-colnames(e_name)
-  e_name_unin<-c(e_name,"EP_UNINSUR") #add uninsured even though it doesn't have an EPL value?
-  e_sub<-subset(ir_svi,select=e_name)
-  e_sub_unin<-subset(ir_svi,select=e_name_unin)
-  
-  #subset including hosp rate, pos test rate
-  sub<-c("hosp.incidence","test.incidence",e_name_unin)
-  mod_sub<-subset(ir_svi,select = sub)
+#sub EP values
+e_name<-names(test_svi[,grep("^EP_", colnames(test_svi))])
+
+#subset including hosp rate, pos test rate
+sub1<-names(test[-2])
+sub2<-c(sub1,e_name)
+mod_sub<-subset(test_svi,select = sub2)
+
   
   
   #summarize all vars
@@ -62,77 +54,70 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   #corrplot(cov_cor,method = "number")
   corrplot(cov_cor, order = 'AOE')
   
+  #scale covariates for all census tracts in CT, then subset COVID-NET catchment
+  scaled <- cbind(mod_sub[1:2], apply(mod_sub[3:19], 2, scale))
+  
   #histogram of all estimates
-  plot_long<-gather(e_sub, key = "name", value = "value")
+  plot_long<-gather(scaled[3:19], key = "name", value = "value")
+  #remove PCI
+  plot_long <- plot_long[!(plot_long$name == "EP_PCI"),]
+  
   ggplot(plot_long) +
     geom_histogram(aes(value)) +
     facet_wrap(~name, ncol = 4)
   
-  hist(e_sub_unin$EP_UNINSUR)
-  hist(mod_sub$test.incidence)
+  hist(scaled$EP_PCI)
+  hist(scaled$test.incidence)
   
+  #merge to COVID-NET data
+  covidnet <- ir[1:2]
+  names(covidnet)[names(covidnet) == "cases_per_cen"] <- "covidnet.cases" 
+  mod_count <- merge(covidnet, scaled, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
   
   #histogram of hosp rate
-  hist(mod_sub$hosp.incidence)
-  mean(mod_sub$hosp.incidence)
-  var(mod_sub$hosp.incidence)
-  
-  #scale
-  mod_sc<-cbind(mod_sub[1],ir[3],apply(mod_sub[2:18],2, scale))
-  
-  #corplot
-  mod_sc_cor<-na.omit(mod_sc)
-  cov_cor<-cor(mod_sc_cor)
-  corrplot(cov_cor, order = 'AOE')
-  
+  hist(mod_count$covidnet.cases)
+  mean(mod_count$covidnet.cases)
+  var(mod_count$covidnet.cases)
   
 ##### regressions #####
-   
-#using hosp count instead?
-  mod_count<-cbind(ir[2],mod_sc[2:19])
   
-  mod2<-glm(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-              EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-              EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR,
+  mod2<-glm(covidnet.cases~test.incidence+EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+
+              EP_AGE17+EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
+              EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR,
             family = 'poisson',
             offset=log(total_pop/100000),
             data=mod_count)
   summary(mod2)
   plot(mod2$residuals)
-  #Residual deviance:  779.46  on 207  degrees of freedom
+  #Residual deviance:  817.47  on 207  degrees of freedom
   
 #neg binom regression
   #count data
-  mod3<-glm.nb(cases_per_cen~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                            EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                            EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+  mod3<-glm.nb(covidnet.cases~test.incidence+EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+
+                 EP_AGE17+EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
+                 EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR+
                  offset(log(total_pop/100000)),
                data=mod_count)
   summary(mod3)
   plot(mod3$residuals)
-  #Residual deviance: 232.08  on 206  degrees of freedom
+  #Residual deviance: 229.72  on 207  degrees of freedom
   
   
 #poisson with log transformed data
-  mod4<-glm.nb(log(cases_per_cen)~test.incidence+EPL_POV+EPL_UNEMP+EPL_PCI+EPL_NOHSDP+EPL_AGE65+
-                  EPL_AGE17+EPL_DISABL+EPL_SNGPNT+EPL_MINRTY+EPL_LIMENG+EPL_MUNIT+
-                  EPL_MOBILE+EPL_CROWD+EPL_NOVEH+EPL_GROUPQ+EP_UNINSUR+
+  mod4<-glm.nb(log(covidnet.cases)~test.incidence+EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+
+                 EP_AGE17+EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
+                 EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR+
                 offset(log(total_pop/100000)),
                 data=mod_count)
   summary(mod4)
   plot(mod4$residuals)
-  
-#find optimal model using AIC
-  optimal_model<-stepAIC(mod3)
-  summary(optimal_model)
-  AIC(optimal_model)
 
   
  
 ##### AIC of each dataset and analysis #####
 #create list of predicted/observed values and coefficients
-  set.seed(123)
-  in_nb <- replicate(10, fitin_nb(mod_count),simplify = FALSE)
+  set.seed(8008135)
+  in_nb <- replicate(10, fitin_nb2(mod_count),simplify = FALSE)
   
   #pull out coefficients
   coefs<-sapply(in_nb,"[[","coef")
@@ -157,56 +142,30 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
   pred.df$index<-rep(1:10, each = 22)
   
   
+  #read in census
+  census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
+  census <- census[-1,] 
+  census <- census[c("GEO_ID","NAME")]
+  census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
+  
+  
   pred.df2<-merge(pred.df,census,all.x = TRUE, all.y = FALSE)
   
-  #grid of ten different predicted vs. observed
-  p1 <- ggplot(pred.df2,aes(cases_per_cen, pred, color = county)) +
+  #grid of predicted vs. observed by NHV and MS
+  p1 <- ggplot(pred.df2,aes(covidnet.cases, pred, color = county)) +
           geom_point() +
           geom_abline(slope = 1, color = "red") +
           theme_bw() +
           facet_wrap(~county)
   
-  #look at 4 & 10
-  plot2<-plot %>%
-          filter(index == 4 | index == 10)
-  
-  ggplot(plot2,aes(cases_per_cen, pred)) +
-    geom_point() +
-    geom_abline(slope = 1, color = "red") + 
-    facet_wrap(~index)
-  #funnel-shaped??
   
   #mean absolute error
   library(data.table)
   pred.dt<-data.table(pred.df)
-  mae1<-as.data.frame(pred.dt[, mae(cases_per_cen, pred), by = index])
+  mae1<-as.data.frame(pred.dt[, mae(covidnet.cases, pred), by = index])
   
 #correlation
-  pred.dt[, cor(x=cases_per_cen, y=pred), by = index]
-  
-  
-
-    
-##### look at outlier data #####
-    #add back census id
-    full_dat<-cbind(ir[1],mod_count)
-    
-    #pull five highest values
-    badfit <- pred.df.opt %>%                                      
-      arrange(desc(cases_per_cen)) %>% 
-      slice(1:5)
-    
-    #extract geo id
-    geo<-badfit$GEO_ID
-    
-    #filter
-    outlier<-filter(full_dat, GEO_ID %in% geo)
-    
-    #see what towns they're in
-    town<-read.csv("tract2town-2010.csv")
-    filter(town, ï..tract_fips %in% geo)
-    
-    #9009350100 (Waterbury) being overestimated a ton
+  pred.dt[, cor(x=covidnet.cases, y=pred), by = index]
     
     
     
@@ -214,9 +173,9 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
 ###### convert counts to rates and re-plot #####
     
     #merge total pop of each census tract to pred.df
-    tot <- subset(ir, select = c("GEO_ID","total_pop"))
+    tot <- subset(mod_count, select = c("GEO_ID","total_pop"))
     pred.df.rate <- merge(pred.df2, tot, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
-    pred.df.rate$observed.rate <- (pred.df.rate$cases_per_cen/pred.df.rate$total_pop)*100000
+    pred.df.rate$observed.rate <- (pred.df.rate$covidnet.cases/pred.df.rate$total_pop)*100000
     pred.df.rate$predicted.rate <- (pred.df.rate$pred/pred.df.rate$total_pop)*100000
     
     #grid of ten different predicted vs. observed
@@ -242,16 +201,10 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
       dph_hosp <- read.csv("dph2020_IR_FIPS2.csv")
       names(dph_hosp)[names(dph_hosp) == "cases_per_cen"] <- "dph_hosp_count"
       
-      #merge with test
-      dph_hosp <- merge(dph_hosp, test, by = "GEO_ID", all.x = FALSE, all.y = TRUE)
-      
-      #subset svi and merge
-      svi.sub <- subset(svi,select=c("FIPS", e_name_unin))
-      dph_hosp <- merge(dph_hosp, svi.sub, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y = FALSE)
+      #merge with scaled
+      dph_hosp <- merge(dph_hosp, scaled, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
       
       
-    #scale (?)
-    dph_hosp <- cbind(dph_hosp[1:4],apply(dph_hosp[5:21],2, scale))
     
     #predict based on coef dataset
     all.covars <- paste(names(coefs)[-1], collapse='+')
@@ -265,24 +218,23 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     
     ave.coefs <- apply(coefs,2,mean)
     
-    dph_hosp2$preds <- as.vector(exp(mod.mat1 %*% ave.coefs + log(dph_hosp2$total_pop/100000)))
+    dph_hosp2$preds <- as.vector(exp(mod.mat1 %*% ave.coefs + log(dph_hosp2$total_pop.x/100000)))
     
     #drop covariates
-    dph.pred<-subset(dph_hosp2,select = c("GEO_ID","dph_hosp_count","preds","total_pop"))
+    dph.pred<-subset(dph_hosp2,select = c("GEO_ID","dph_hosp_count","preds","total_pop.x"))
     
     
     #first check of sums
     sum(dph.pred$preds) - sum(dph.pred$dph_hosp_count)
     
-    #add county column
-    census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
-    census <- census[-1,] 
-    census <- census[c("GEO_ID","NAME")]
-    census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
+    #convert to rates
+    dph.pred$observed.rate <- (dph.pred$dph_hosp_count/dph.pred$total_pop.x)*100000
+    dph.pred$predicted.rate <- (dph.pred$preds/dph.pred$total_pop.x)*100000
+    
     dph.pred2<-merge(dph.pred,census,all.x = TRUE, all.y = FALSE)
     
     #sum of predicted and observed values per county
-    county <- cbind(dph.pred2[6],dph.pred2[2:3],dph.pred2[4]) 
+    county <- cbind(dph.pred2[8],dph.pred2[2:5]) 
     county <- aggregate(. ~ county, data = as.data.frame(county), FUN = sum)
     names(county)[names(county) == "dph_hosp_count"] <- "obs"
     #rates by county
@@ -291,24 +243,49 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     #difference in rates by county
     county$diff <- county$pred.rate - county$obs.rate
     
-    #convert to rates
-    dph.pred$observed.rate <- (dph.pred$dph_hosp_count/dph.pred$total_pop)*100000
-    dph.pred$predicted.rate <- (dph.pred$preds/dph.pred$total_pop)*100000
-    
-    
-    #pull out NHV and MS
-    noNHVMS<-dph.pred[!(dph.pred$GEO_ID %in% ir$GEO_ID),]
-    NHVMS <- dph.pred[(dph.pred$GEO_ID %in% ir$GEO_ID),]
-    
-    #linmod for all census tracts
+    #linmod for all census tracts using transformed data
     linmod1<-lm(observed.rate~predicted.rate, data = dph.pred)
     summary(linmod1)
     #intercept 3.77310
+    plot(linmod1$residuals)
+    
+    ggplot(dph.pred, aes(x = predicted.rate, y = observed.rate)) + 
+      geom_point(alpha = 0.3) +
+      stat_smooth(method = "lm", col = "aquamarine3") +
+      geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
+      theme_bw()
+
+    
+    hist(log(dph.pred$predicted.rate))
+    hist(sqrt(dph.pred$observed.rate))
+    
+    #linmod for all census tracts using transformed data
+    linmod2<-lm(sqrt(observed.rate)~log(predicted.rate), data = dph.pred)
+    summary(linmod2)
+    #intercept 3.77310
+    plot(linmod2$residuals)
+    
+    ggplot(dph.pred, aes(x = log(predicted.rate), y = sqrt(observed.rate))) + 
+      geom_point(alpha = 0.3) +
+      stat_smooth(method = "lm", col = "aquamarine3") +
+      geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
+      theme_bw()
+    
+    
+    #pull out NHV and MS
+    noNHVMS<-dph.pred[!(dph.pred$GEO_ID %in% covidnet$GEO_ID),]
+    NHVMS <- dph.pred[(dph.pred$GEO_ID %in% covidnet$GEO_ID),]
     
     #linmod to check (no NHV and MS)
-    linmod2<-lm(observed.rate~predicted.rate, data = noNHVMS)
+    linmod3<-lm(observed.rate ~ predicted.rate, data = noNHVMS)
     summary(linmod2)
     #intercept = -1.7217
+    
+    ggplot(noNHVMS, aes(x = predicted.rate, y = observed.rate)) + 
+      geom_point(alpha = 0.3) +
+      stat_smooth(method = "lm", col = "red") +
+      theme_bw()
+    
     
     #corrplot
     dph.pred.cor<-subset(NHVMS,select = c("observed.rate","predicted.rate"))
@@ -352,43 +329,11 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
           #scale_color_manual(values = c("#2C7096","#E69833"))
     
     
+  
     
     
-    #%>%
-     # mutate(diff = value - lag(value, default = first(value)))
+  
     
-    
-##### check diff between dph hosp and covidnet hosp #####
-    covidnet<-cbind(ir[1],mod_count[1])
-    dph.covidnet<-merge(covidnet,dph_hosp,all.x = T, all.y = F)
-    dph.covidnet<-na.omit(dph.covidnet)
-    
-    sum(dph.covidnet$cases_per_cen) - sum(dph.covidnet$dph_hosp_count)
-    #1000 MORE HOSPITALIZATIONS FOR COVIDNET???
-    
-    #check fit when using COVID-NET as observed for NHV and MS
-    #subset covidnet geo id and hosp rate
-    covidnet <- cbind(ir[1], ir[4])
-    
-    covidnet.preds <- merge(covidnet, dph.pred2, all.x = T, all.y = F) 
-    covidnet.preds <- na.omit(covidnet.preds)
-    
-    p6<-ggplot(covidnet.preds,aes(incidence, predicted.rate,color=county)) +
-      geom_point(alpha=0.6) +
-      geom_abline(slope = 1, color = "red") +
-      theme_bw() +
-      xlab("Observed Hospitalization Rate") + ylab("Estimated Hospitalization Rate")+
-      ggtitle("COVID-NET hospitalization rate used as observed") +
-      facet_wrap(~county)
-    
-    p7<-ggplot(covidnet.preds,aes(observed.rate, predicted.rate,color=county)) +
-      geom_point(alpha=0.6) +
-      geom_abline(slope = 1, color = "red") +
-      theme_bw() +
-      xlab("Observed Hospitalization Rate") + ylab("Estimated Hospitalization Rate")+
-      ggtitle("DPH hospitalization rate used as observed") +
-      facet_wrap(~county)
-    
-    gridExtra::grid.arrange(p6,p7,ncol=1)
+   
     
     

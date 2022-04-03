@@ -61,60 +61,11 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
 
 #### export csv #####
     write.csv(covidnet_inc,"covidnet2020_IR.csv",row.names = FALSE)
+
+    
     
     
 
-    
-###### DPH TEST IR ######
-    
-    #use test_diff from dph_datawrangling.R
-        dph_test_count<-aggregate(test_diff$flag ~ test_diff$geoid10, FUN=sum)
-        #2577 missing, 5481 NULL
-    
-    #rename columns
-    names(dph_test_count)[names(dph_test_count) == "test_diff$geoid10"] <- "GEO_ID"
-    names(dph_test_count)[names(dph_test_count) == "test_diff$flag"] <- "cases_per_cen"
-    
-    #remove 0 at front of census tract
-    dph_test_count$GEO_ID<-as.numeric(dph_test_count$GEO_ID)
-    dph_test_count$GEO_ID<-as.character(dph_test_count$GEO_ID)
-    
-    #merge with total pop dataset  
-    dph_test_inc<-merge(dph_test_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
-    
-    #calculate incidence 
-    dph_test_inc$total_pop<-as.integer(dph_test_inc$total_pop)
-    dph_test_inc$incidence<-(dph_test_inc$cases_per_cen/dph_test_inc$total_pop)*100000
-    
-    #save dataset
-    write.csv(dph_test_inc,"dph2020_test_IR_FIPS.csv",row.names = FALSE)
-    
-    
-    
-###### DPH HOSP IR ######
-    
-    #use hosp_diff from dph_datawrangling.R
-    #create count of cases in each census tract
-        dph_hosp_count<-aggregate(hosp_diff$flag ~ hosp_diff$geoid10, FUN=sum)
-        #104 missing, 297 NULL
-    
-    #rename columns
-    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$geoid10"] <- "GEO_ID"
-    names(dph_hosp_count)[names(dph_hosp_count) == "hosp_diff$flag"] <- "cases_per_cen"
-    
-    #remove 0 at front of census tract
-    dph_hosp_count$GEO_ID<-as.numeric(dph_hosp_count$GEO_ID)
-    dph_hosp_count$GEO_ID<-as.character(dph_hosp_count$GEO_ID)
-    
-    #merge with total pop dataset  
-    dph_hosp_inc<-merge(dph_hosp_count, cen_pop, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
-    
-    #calculate incidence 
-    dph_hosp_inc$total_pop<-as.integer(dph_hosp_inc$total_pop)
-    dph_hosp_inc$incidence<-(dph_hosp_inc$cases_per_cen/dph_hosp_inc$total_pop)*100000
-    
-    #save dataset
-    write.csv(dph_hosp_inc,"dph2020_IR_FIPS.csv",row.names = FALSE)
 
     
     
