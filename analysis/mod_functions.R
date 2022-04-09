@@ -74,11 +74,16 @@
     #drop covariates
     dfOut<-subset(dfOut,select = c("GEO_ID","covidnet.cases","pred"))
     
+    #generate predictions for leave in
+    dfIn$pred<-predict(opt_mod, newdata = dfIn, type = "response")
+    #drop covariates
+    dfIn<-subset(dfIn,select = c("GEO_ID","covidnet.cases","pred"))
+    
     #extract coefficients
     coef1<-coef(opt_mod)
     
     #return list
-    out.list<-list("coef"=coef1,"pred.df"=dfOut)
+    out.list<-list("coef"=coef1,"pred.df"=dfOut, "pred.in.df"=dfIn)
     
   }
   

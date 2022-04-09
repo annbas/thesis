@@ -3,7 +3,7 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 library(reshape2)
 library(tidyverse)
 
-dph<-read.csv("covid_positive_tests_hospitalizations.csv")
+dph<-read.csv("covid_positive_tests_hospitalizations_2022-04-07.csv") #delete data for original dataset
 
 #create separate datasets for testing and hospitalizations
   test<-dph[,c(1:2,6:31)]
@@ -70,9 +70,10 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
       dph_test_inc$incidence<-(dph_test_inc$cases_per_cen/dph_test_inc$total_pop)*100000
       
     #save dataset
-    write.csv(dph_test_inc,"dph2020_test_IR_FIPS.csv",row.names = FALSE)
+    write.csv(dph_test_inc,"dph2020_test_IR_FIPS2.csv",row.names = FALSE)
     
-    
+    #189929 before new dataset
+    #189795 from new dataset?
     
     
     
@@ -142,6 +143,10 @@ dph<-read.csv("covid_positive_tests_hospitalizations.csv")
     dph_hosp_inc$incidence<-(dph_hosp_inc$cases_per_cen/dph_hosp_inc$total_pop)*100000
     
     #save dataset
-    write.csv(dph_hosp_inc,"dph2020_IR_FIPS2.csv",row.names = FALSE)
+    write.csv(dph_hosp_inc,"dph2020_IR_FIPS3.csv",row.names = FALSE)
+    
+    
+    #12428 before new dataset
+    #13993 after new dataset
   
   

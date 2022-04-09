@@ -1,0 +1,130 @@
+---
+title: "Thesis"
+author: "Ann Basting"
+output: 
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+#install.packages("Hmisc")
+library(Hmisc)
+library(corrplot)
+#install.packages("e1071")
+library(e1071)
+library(lmtest)
+library(MASS)
+#install.packages("plyr")
+library(plyr)
+library(Metrics)
+#install.packages("BMA")
+library(BMA)
+source("Z:/FluSurv-NET/COVID-19/Ann/Thesis/thesis/analysis/mod_functions.R")
+```
+
+## Histogram of scaled covariates
+
+
+```{r scaled, echo=FALSE}
+ggplot(plot_long) +
+    geom_histogram(aes(value), bins = 50) +
+    facet_wrap(~name, ncol = 4)
+  
+  hist(scaled$EP_PCI)
+  hist(scaled$test.incidence)
+```
+
+
+
+
+
+## Fit of leave in data (predicted vs observed)
+
+```{r leave in, echo=FALSE}
+ggplot(fit.check,aes(pred, covidnet.cases ,color = county)) +
+      geom_point() +
+      geom_abline(slope = 1, color = "red") +
+      theme_bw() +
+      facet_wrap(~county)
+```
+
+
+
+
+
+## Fit of leave out data (predicted vs observed)
+
+```{r leave out, echo=FALSE}
+ggplot(pred.df.rate,aes(predicted.rate, observed.rate, color = county)) +
+            geom_point() +
+            geom_abline(slope = 1, color = "red") +
+            theme_bw() +
+            facet_wrap(~county)
+```
+
+## coefficients
+
+EP_AGE65   = % of persons 65 and older
+EP_DISABL  = % of civilian non-insitutionalized pop with a disability
+EP_SNGPNT  = % of single parent households with children under 18 
+EP_MINRTY  = % minority
+EP_LIMENG  = % of persons (age 5+) who speak English "less than well"
+EP_MUNIT   = % of housing in structures with 10 or more units
+EP_NOVEH   = % of households with no vehicle available
+EP_UNINSUR = % uninsured 
+EP_PCI     = per capita income
+EP_AGE17   = % of persons aged 17 and younger
+EP_MOBILE  = % of mobile homes
+EP_UNEMP   = unemployment rate
+EP_POV     = % of persons below poverty
+EP_NOHSDP  = % of persons with no high school diploma
+
+```{r}
+ave.coefs
+
+coefs
+```
+
+
+## linmods
+
+for non-transformed predictor/outcome
+
+```{r non-transformed}
+linmod1<-lm(observed.rate~predicted.rate, data = dph.pred)
+    summary(linmod1)
+   
+    plot(linmod1$residuals)
+    
+    ggplot(dph.pred, aes(x = predicted.rate, y = observed.rate)) + 
+      geom_point(alpha = 0.3) +
+      stat_smooth(method = "lm", col = "aquamarine3") +
+      #geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
+      theme_classic()
+```
+
+
+for transformed predictor/outcome
+
+```{r playing with shape of predicted and observed}
+
+hist(log(dph.pred$predicted.rate))
+hist(sqrt(dph.pred$observed.rate))
+
+```
+
+```{r transformed}
+
+    linmod2<-lm(log(observed.rate)~log(predicted.rate), data = dph.pred)
+    summary(linmod2)
+ 
+    plot(linmod2$residuals)
+    
+    ggplot(dph.pred, aes(x = log(predicted.rate), y = log(observed.rate))) + 
+      geom_point(alpha = 0.3) +
+      stat_smooth(method = "lm", col = "aquamarine3") +
+      #geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
+      theme_classic()
+```

@@ -359,11 +359,11 @@ ir_svi<-merge(ir_svi, svi, by.x = "GEO_ID", by.y = "FIPS", all.x = TRUE, all.y =
     
     
 ##### check diff between dph hosp and covidnet hosp #####
-    covidnet<-cbind(ir[1],mod_count[1])
+    covidnet<-cbind(ir[1],mod_count[2])
     dph.covidnet<-merge(covidnet,dph_hosp,all.x = T, all.y = F)
     dph.covidnet<-na.omit(dph.covidnet)
     
-    sum(dph.covidnet$cases_per_cen) - sum(dph.covidnet$dph_hosp_count)
+    sum(dph.covidnet$covidnet.cases) - sum(dph.covidnet$dph_hosp_count)
     #1000 MORE HOSPITALIZATIONS FOR COVIDNET???
     
     #check fit when using COVID-NET as observed for NHV and MS

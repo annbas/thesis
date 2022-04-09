@@ -19,7 +19,12 @@ source("Z:/FluSurv-NET/COVID-19/Ann/Thesis/thesis/analysis/mod_functions.R")
 #read in data
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv") 
-test<-read.csv("dph2020_test_IR_FIPS.csv")
+test<-read.csv("dph2020_test_IR_FIPS2.csv")
+#read in census
+census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
+census <- census[-1,] 
+census <- census[c("GEO_ID","NAME")]
+census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
 
 ##replace -999 with NA?
 svi[svi == -999] <- NA
@@ -63,7 +68,7 @@ mod_sub<-subset(test_svi,select = sub2)
   plot_long <- plot_long[!(plot_long$name == "EP_PCI"),]
   
   ggplot(plot_long) +
-    geom_histogram(aes(value)) +
+    geom_histogram(aes(value), bins = 50) +
     facet_wrap(~name, ncol = 4)
   
   hist(scaled$EP_PCI)
@@ -116,7 +121,7 @@ mod_sub<-subset(test_svi,select = sub2)
  
 ##### AIC of each dataset and analysis #####
 #create list of predicted/observed values and coefficients
-  set.seed(8008135)
+  set.seed(123)
   in_nb <- replicate(10, fitin_nb2(mod_count),simplify = FALSE)
   
   #pull out coefficients
@@ -134,25 +139,38 @@ mod_sub<-subset(test_svi,select = sub2)
   #get mean of each column
   sort(apply(coefs,2,mean,na.rm=T))
   
-  #pull list of predicted and observed values
-  pred.df<-lapply(in_nb,"[[","pred.df")
   
-  #flatten pred.df into one dataset and add new column that designates index in list
-  pred.df<-bind_rows(pred.df)
-  pred.df$index<-rep(1:10, each = 22)
+  ## LEAVE IN (checking fit)
+    #pull out list of predicted and observed for leave in
+    pred.in.df <- lapply(in_nb,"[[","pred.in.df")
+    
+    #flatten pred.df into one dataset and add new column that designates index in list
+    pred.in.df<-bind_rows(pred.in.df)
+    pred.in.df$index<-rep(1:10, each = 203)
   
+    #check fit
+    fit.check <- merge(pred.in.df,census,all.x = TRUE, all.y = FALSE)
+    
+    ggplot(fit.check,aes(pred, covidnet.cases ,color = county)) +
+      geom_point() +
+      geom_abline(slope = 1, color = "red") +
+      theme_bw() +
+      facet_wrap(~county)
+    
+    
+  ## LEAVE OUT
+    #pull list of predicted and observed values for leave out
+    pred.df<-lapply(in_nb,"[[","pred.df")
+    
+    #flatten pred.df into one dataset and add new column that designates index in list
+    pred.df<-bind_rows(pred.df)
+    pred.df$index<-rep(1:10, each = 22)
   
-  #read in census
-  census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
-  census <- census[-1,] 
-  census <- census[c("GEO_ID","NAME")]
-  census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
-  
-  
+  #check fit for actual leave out/predicted values
   pred.df2<-merge(pred.df,census,all.x = TRUE, all.y = FALSE)
   
   #grid of predicted vs. observed by NHV and MS
-  p1 <- ggplot(pred.df2,aes(covidnet.cases, pred, color = county)) +
+  p1 <- ggplot(pred.df2,aes(pred, covidnet.cases, color = county)) +
           geom_point() +
           geom_abline(slope = 1, color = "red") +
           theme_bw() +
@@ -179,7 +197,7 @@ mod_sub<-subset(test_svi,select = sub2)
     pred.df.rate$predicted.rate <- (pred.df.rate$pred/pred.df.rate$total_pop)*100000
     
     #grid of ten different predicted vs. observed
-    p2 <- ggplot(pred.df.rate,aes(observed.rate, predicted.rate, color = county)) +
+    p2 <- ggplot(pred.df.rate,aes(predicted.rate, observed.rate, color = county)) +
             geom_point() +
             geom_abline(slope = 1, color = "red") +
             theme_bw() +
@@ -198,7 +216,7 @@ mod_sub<-subset(test_svi,select = sub2)
     
     #create dph dataset for model
       #read in state hosp data
-      dph_hosp <- read.csv("dph2020_IR_FIPS2.csv")
+      dph_hosp <- read.csv("dph2020_IR_FIPS3.csv")
       names(dph_hosp)[names(dph_hosp) == "cases_per_cen"] <- "dph_hosp_count"
       
       #merge with scaled
@@ -243,7 +261,7 @@ mod_sub<-subset(test_svi,select = sub2)
     #difference in rates by county
     county$diff <- county$pred.rate - county$obs.rate
     
-    #linmod for all census tracts using transformed data
+    #linmod for all census tracts using non-transformed data
     linmod1<-lm(observed.rate~predicted.rate, data = dph.pred)
     summary(linmod1)
     #intercept 3.77310
@@ -268,7 +286,7 @@ mod_sub<-subset(test_svi,select = sub2)
     ggplot(dph.pred, aes(x = log(predicted.rate), y = sqrt(observed.rate))) + 
       geom_point(alpha = 0.3) +
       stat_smooth(method = "lm", col = "aquamarine3") +
-      geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
+      #geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
       theme_bw()
     
     
@@ -320,11 +338,11 @@ mod_sub<-subset(test_svi,select = sub2)
           scale_color_manual(values = c("#2C7096","#E69833")) +
           facet_wrap(~legend)
     
-    p5<-ggplot(dph.pred2,aes(observed.rate, predicted.rate,color=county)) +
+    p5<-ggplot(dph.pred2,aes(predicted.rate, observed.rate, color=county)) +
           geom_point(alpha=0.6) +
           geom_abline(slope = 1, color = "red") +
           theme_bw() +
-          xlab("Observed Hospitalization Rate") + ylab("Estimated Hospitalization Rate")+
+          ylab("Observed Hospitalization Rate") + xlab("Estimated Hospitalization Rate")+
           facet_wrap(~county)
           #scale_color_manual(values = c("#2C7096","#E69833"))
     

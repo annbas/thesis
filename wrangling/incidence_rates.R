@@ -16,13 +16,18 @@ cen_pop = cen_pop[-1,]
 
 #merging covid-net, geo-coded data
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
+
     marsep<-read.csv("CDC REDCap_Mar-Sep.csv")
     names(marsep)[names(marsep) == 'ï..caseid'] <- 'caseid'
+    
     octdec<-read.csv("Yale REDCap_Oct-Dec.csv")
     names(octdec)[names(octdec) == 'ï..caseid'] <- 'caseid'
+    
     setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
     geocode<-read.csv("CTCovidFinalMatch_Mar-Dec2020_CDCFormat.csv")
     names(geocode)[names(geocode) == 'CASEID'] <- 'caseid'
+    
+#### COVID-NET IR with post admit test ####
     #subset necessary variables
     vars_inc<-c("caseid","admdate")
     
@@ -63,7 +68,17 @@ setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data/2020 COVID-NET cases")
     write.csv(covidnet_inc,"covidnet2020_IR.csv",row.names = FALSE)
 
     
+#### COVID-NET IR without post-admit test ####
     
+    
+    #subset test data
+    #melt to long
+    #merge to admit date
+    #if test date =< 14 days before admit and =< admit date, flag
+    #remove entries that are not flagged
+    #deduplicate to only include one ID
+    
+    #qual check - see if it drops ~500
     
 
 
