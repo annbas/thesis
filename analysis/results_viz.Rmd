@@ -82,7 +82,7 @@ EP_POV     = % of persons below poverty
 EP_NOHSDP  = % of persons with no high school diploma
 
 ```{r}
-ave.coefs
+as.data.frame(ave.coefs)
 
 coefs
 ```
@@ -127,4 +127,20 @@ hist(sqrt(dph.pred$observed.rate))
       stat_smooth(method = "lm", col = "aquamarine3") +
       #geom_abline(slope = 1, linetype = "dotted", size = 1, col = "red")+
       theme_classic()
+```
+
+
+```{r in and out}
+ggarrange(p.in,p.out,
+              labels = c("A","B"),
+              ncol=1)
+
+ggsave(filename = "highres_leaveinout.png",width = 7, height = 6, units = "in", device='png', dpi=300)
+```
+
+```{rsvi}
+ggarrange(svi1, svi2, svi3, svi4,
+              labels = c("A","B","C","D"),
+              ncol=2)
+svi1
 ```

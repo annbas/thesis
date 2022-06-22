@@ -1,19 +1,22 @@
 setwd("Z:/FluSurv-NET/COVID-19/Ann/Thesis/data")
 
+library(plyr)
 library(tidyverse)
 library(Hmisc)
 library(corrplot)
 library(e1071)
 library(lmtest)
 library(MASS)
-library(plyr)
 library(Metrics)
 library(BMA)
 library(ggpubr)
 library(Rcpp)
 library(geojsonio)
+library(mctest)
+library(MetBrewer)
+library(png)
 source("Z:/FluSurv-NET/COVID-19/Ann/Thesis/thesis/analysis/mod_functions.R")
-
+source('./excess_deaths_functions/runIfExpired.R')
 
 #read in data
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
@@ -30,9 +33,7 @@ svi[svi == -999] <- NA
 #count NAs in each column
 apply(is.na(svi), MARGIN = 2, FUN = sum)
 
-#sub FIPS and test in test
-#test <- subset(test, select = c("GEO_ID","incidence"))
-#change name
+#change name in test df
 names(test)[names(test) == "incidence"] <- "test.incidence"
 
 #merge test and SVI
@@ -78,6 +79,12 @@ mod_sub<-subset(test_svi,select = sub2)
   names(covidnet)[names(covidnet) == "cases_per_cen"] <- "covidnet.cases" 
   mod_count <- merge(covidnet, scaled, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
   
+  #corrplot of variables
+  mod_count2<-na.omit(mod_count)
+  cov_cor<-cor(mod_count2)
+  corrplot(cov_cor, method = "number", number.cex = 0.5)
+  
+  
   #histogram of hosp rate
   hist(mod_count$covidnet.cases)
   mean(mod_count$covidnet.cases)
@@ -106,15 +113,8 @@ mod_sub<-subset(test_svi,select = sub2)
   plot(mod3$residuals)
   #Residual deviance: 229.72  on 207  degrees of freedom
   
-  
-#poisson with log transformed data
-  mod4<-glm.nb(log(covidnet.cases)~test.incidence+EP_POV+EP_UNEMP+EP_PCI+EP_NOHSDP+EP_AGE65+
-                 EP_AGE17+EP_DISABL+EP_SNGPNT+EP_MINRTY+EP_LIMENG+EP_MUNIT+
-                 EP_MOBILE+EP_CROWD+EP_NOVEH+EP_GROUPQ+EP_UNINSUR+
-                offset(log(total_pop/100000)),
-                data=mod_count)
-  summary(mod4)
-  plot(mod4$residuals)
+  #check model for collinearity
+  imcdiag(mod3, method = "VIF", all = T)
 
   
  
@@ -157,7 +157,7 @@ mod_sub<-subset(test_svi,select = sub2)
       fit.check$predicted.rate <- (fit.check$pred/fit.check$total_pop)*100000
       
       p.in <- ggplot(fit.check, aes(observed.rate, predicted.rate,color = county)) +
-                geom_point(alpha = 0.6) +
+                geom_point(alpha = 0.4) +
                 geom_abline(slope = 1, color = "red") +
                 theme_bw() +
                 scale_color_manual(values = c("#00BA38","#00BFC4")) +
@@ -166,7 +166,7 @@ mod_sub<-subset(test_svi,select = sub2)
                 ylim(0,3000) +
                 facet_wrap(~county) +
                 theme(legend.position="none",
-                      text = element_text(size = 12))
+                      text = element_text(size = 10))
     
     
   ## LEAVE OUT
@@ -208,7 +208,7 @@ mod_sub<-subset(test_svi,select = sub2)
     
     #grid of ten different predicted vs. observed
     p.out <- ggplot(pred.df.rate,aes(observed.rate, predicted.rate, color = county)) +
-                  geom_point(alpha = 0.6) +
+                  geom_point(alpha = 0.4) +
                   geom_abline(slope = 1, color = "red") +
                   theme_bw() +
                   scale_color_manual(values = c("#00BA38","#00BFC4")) +
@@ -217,7 +217,7 @@ mod_sub<-subset(test_svi,select = sub2)
                   ylim(0,3000) +
                   facet_wrap(~county) +
                   theme(legend.position="none",
-                        text = element_text(size = 12))
+                        text = element_text(size = 10))
     
     #look at in and out side by side
     ggarrange(p.in,p.out,
@@ -269,6 +269,66 @@ mod_sub<-subset(test_svi,select = sub2)
     
     dph.pred2<-merge(dph.pred,census,all.x = TRUE, all.y = FALSE)
     
+
+    
+##### prediction intervals #####
+    #create dataset of just predictions and observed
+    dph.pred.pi<-subset(dph.pred,select = c("GEO_ID","dph_hosp_count","preds"))
+    
+    #generating samples based on parameter uncertainty
+      set.seed (1234)
+      
+      #coefs.mod1 <- coef(mod1) #Mean estimate of the regression coefficients
+      #NOTE: this was created when generating predictions for the state
+      #var is called ave.coefs
+      
+      #make sure that this is correct formula/data/etc.
+      mod1 <- glm.nb(dph_hosp_count~test.incidence + EP_AGE65 + EP_DISABL + EP_SNGPNT + EP_MINRTY + 
+                       EP_LIMENG + EP_MUNIT + EP_NOVEH + EP_UNINSUR + EP_PCI + EP_AGE17 + 
+                       EP_MOBILE + EP_UNEMP + EP_POV + EP_NOHSDP +
+                       offset(log(dph_hosp2$total_pop.x/100000)), data = dph_hosp2)
+      
+      v.cov.mat <- vcov(mod1) 
+      
+      pred.coefs.reg.mean <-
+        MASS::mvrnorm(n = 1000,
+                      mu = ave.coefs,
+                      Sigma = v.cov.mat) 
+      
+      str(pred.coefs.reg.mean) #1000 estimates of the regression coefficient
+      
+    #generate 1000 versions of predictions based on these 1000 regression coefficients
+      log.preds.stage1.regmean <- mod.mat1 %*% t(pred.coefs.reg.mean)
+      
+      
+      log.preds.stage1.regmean <- apply(log.preds.stage1.regmean, 2,
+                                        function(x) x + log(dph_hosp2$total_pop.x/100000))
+    #adding observation noise
+    
+      preds.stage2 <- rnbinom(n = length(log.preds.stage1.regmean) ,
+                              size = mod1$theta, mu = exp(log.preds.stage1.regmean))
+      
+      preds.stage2 <- matrix(preds.stage2, ncol=ncol(log.preds.stage1.regmean))
+      
+      #bind to and melt by census tract?
+      preds.stage2.m <- reshape2::melt(cbind.data.frame('GEO_ID'=dph_hosp2$GEO_ID,preds.stage2), id.vars='GEO_ID')
+      
+    #overall excess and uncertainty
+      excess1 <- merge(preds.stage2.m, dph_hosp2[,c('GEO_ID','dph_hosp_count')], 
+                       by='GEO_ID')
+      
+      #Generate 1000 estimates of total excess 
+      excess1 <- excess1 %>%
+        mutate('excess'= value - dph_hosp_count) %>%
+        group_by(variable) %>%
+        dplyr::summarize('excessN' = sum(excess))
+      
+      excess2 <- quantile(excess1$excessN, probs=c(0.5, 0.025, 0.975))
+      
+      round(excess2, -2)
+    
+    
+##### AGGREGATE BY COUNTY #####    
     #sum of predicted and observed values per county
     county <- cbind(dph.pred2[8],dph.pred2[2:5]) 
     county <- aggregate(. ~ county, data = as.data.frame(county), FUN = sum)
@@ -357,14 +417,17 @@ mod_sub<-subset(test_svi,select = sub2)
           facet_wrap(~legend)
     
     p5<-ggplot(dph.pred2,aes(observed.rate, predicted.rate, color=county)) +
-          geom_point(alpha=0.6) +
+          geom_point(alpha=0.4) +
           geom_abline(slope = 1, color = "red") +
           theme_bw() +
           xlab("Observed Hospitalization Rate") + ylab("Estimated Hospitalization Rate")+
           facet_wrap(~county) +
           theme(legend.position="none",
-                text = element_text(size = 12))
-          #scale_color_manual(values = c("#2C7096","#E69833"))
+                text = element_text(size = 10)) 
+          #scale_color_manual(values = met.brewer("Egypt", n=8, type = "continuous"))
+          
+    #export
+    ggsave(filename = "highres_xyplot.png",width = 8, height = 5, units = "in", device='png', dpi=300)
     
   #SVI by difference in rate? at census tract?
     #merge svi subbed to e_name and dph.pred
@@ -395,8 +458,5 @@ mod_sub<-subset(test_svi,select = sub2)
          
     
     
-    
-  #maps
-    spdf <- geojson_read("https://gist.githubusercontent.com/hydrosquall/516cc2dab64aedc97636/raw/de5c549ef85b68df7756ead2a3f387a8666c64c0/ctCensusTracts2010.json",  
-                         what = "sp")
+  
     

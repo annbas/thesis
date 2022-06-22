@@ -4,8 +4,12 @@ library(lubridate)
 library(dplyr)
 library(tableone)
 library(table1)
+library(tableone)
 library(reshape2)
 library(MMWRweek)
+library(data.table)
+library(ggplot2)
+library(ggstream)
   
 
  #### table1 package ####
@@ -87,6 +91,10 @@ library(MMWRweek)
       
     #hospital = Y for dph
       dph<-read.csv("covid_positive_tests_hospitalizations_2022-04-07.csv") 
+      #remove 0 at front of census tract
+      dph$geoid10<-as.numeric(dph$geoid10)
+      dph$geoid10<-as.character(dph$geoid10)
+      
       hosp<-dph[,c(1:5,32:40)]
       hosp<-subset(hosp,hospital_admission == c("Y"))
       hosp$hospital_admission <- NULL
@@ -152,9 +160,6 @@ library(MMWRweek)
       names(ctedss)[names(ctedss) == "gender"] <- "sex"
       names(ctedss)[names(ctedss) == "hisp_race"] <- "race"
       
-      #remove 0 at front of census tract
-      ctedss$geoid10<-as.numeric(ctedss$geoid10)
-      ctedss$geoid10<-as.character(ctedss$geoid10)
   
   #bind to one        
   all.hosp <- rbind(covidnet,ctedss)
@@ -167,7 +172,7 @@ library(MMWRweek)
       census$county <- str_extract(census$NAME, "\\b[^,]+(?= County?)")
       census$NAME <- NULL
       
-      all.hosp <-merge(all.hosp, census, by = "geoid10", all.x = T, all.y = F)
+      all.hosp <- merge(all.hosp, census, by = "geoid10", all.x = T, all.y = F)
       
   #variables we want: county, age, sex, race. so, adjust DPH data and covidnet 
   #data to include these columns, and then rbind
@@ -179,9 +184,20 @@ library(MMWRweek)
         names(all.hosp)[names(all.hosp) == "race"] <- "Race"
         
   
-      table1(~ County + Age + Sex + Race | surv.method, data=all.hosp, overall=F)
-  
-  
+      tab1<-table1(~ County + Age + Sex + Race | surv.method, data=all.hosp, overall=F)
+      
+      
+      #try to create table for export
+      all.hosp2 <- all.hosp[2:6] 
+      tab2<-CreateTableOne(data = all.hosp2, strata = "surv.method")
+      tab3<-print(tab2, quote = FALSE, noSpaces = TRUE, printToggle = FALSE)
+      write.csv(tab3, file = "TableOne.csv")
+
+      
+      
+      
+      
+      
 #### Streamgraph ####
   #date of admit for CTEDSS and COVIDNET
       #covidnet
@@ -194,17 +210,52 @@ library(MMWRweek)
   #group by week?
       covidnet.week <- MMWRweek(covidnet2$admdate)
       covidnet.week <- as.data.frame(table(covidnet.week$MMWRweek))
+      setnames(covidnet.week, old = c('Var1','Freq'), new = c('week','covidnet'))
+      
+  #repeat for CTEDSS
+      ctedss2 <- subset(hosp_diff, flag == 1, select = c("geoid10","admit.week"))
+      
+      #merge with census and sub to NHV and MS
+      ctedss.sub <- merge(ctedss2, census, by = "geoid10", all.x = T, all.y = F)
+     
+      ctedss.sub <- subset(ctedss.sub, 
+                           ctedss.sub$county == "New Haven" | ctedss.sub$county == "Middlesex", 
+                           select = "admit.week")
+      
+      ctedss.week <- as.data.frame(table(ctedss.sub$admit.week))
+      setnames(ctedss.week, old = c('Var1','Freq'), new = c('week','ctedss'))
+      
   #merge on week and count diff per week
+      week <- as.data.frame(seq(1:53))
+      names(week)[1] <- 'week'
+      
+      stream <- merge(week, covidnet.week, by = "week", all.x = T, all.y = F)
+      stream <- merge(stream, ctedss.week, by = "week", all.x = T, all.y = F)
+      
+      stream[is.na(stream)] <- 0
+      
+      stream.long <- reshape2::melt(stream, id.vars= "week",
+                          value.name = "hosp",
+                          variable.name = "surv.sys")
+      
   #viz in streamgraph
+    ggplot(stream.long, aes(x = week, y = hosp, fill = surv.sys)) +
+      geom_stream(colour = "black",size=0.1)
   
   
+  #try doing viz of difference
+    stream$diff <- stream$covidnet - stream$ctedss
+    stream$perc.diff <- (stream$diff/stream$ctedss)*100
+    
+    ggplot(stream, aes(x = week, y = perc.diff)) +
+      geom_area()
+  
+    #vizzes don't seem to be showing major difference in reporting 
+    #pre-July and post-July
   
   
-  
-  
-  
-  
-  
+    ggplot(stream, aes(x = week, y = diff)) +
+      geom_area()
   
   
   

@@ -45,7 +45,7 @@ library(mapproj)
     #svi_ct_ses$value<-as.numeric(case_per_tract$value)
     
     #map cases per census tract
-    tract_choropleth(svi_ct_ses,
+    svi1<-tract_choropleth(svi_ct_ses,
                      state_name  = "connecticut",
                      county_zoom = NULL,
                      title       = "SES Ranking of Census Tracts in Connecticut",
@@ -65,7 +65,7 @@ library(mapproj)
     #svi_ct_ses$value<-as.numeric(case_per_tract$value)
     
     #map cases per census tract
-    tract_choropleth(svi_ct_hcd,
+    svi2<-tract_choropleth(svi_ct_hcd,
                      state_name  = "connecticut",
                      county_zoom = NULL,
                      title       = "Household Composition & Disability Ranking of Census Tracts in Connecticut",
@@ -80,7 +80,7 @@ library(mapproj)
     names(svi_ct_msl)[names(svi_ct_msl) == "RPL_THEME3"] <- "value"
     
     #map cases per census tract
-    tract_choropleth(svi_ct_msl,
+    svi3<-tract_choropleth(svi_ct_msl,
                      state_name  = "connecticut",
                      county_zoom = NULL,
                      title       = "Minority Status & Language Ranking of Census Tracts in Connecticut",
@@ -97,7 +97,7 @@ library(mapproj)
     names(svi_ct_htt)[names(svi_ct_htt) == "RPL_THEME4"] <- "value"
     
     #map cases per census tract
-    tract_choropleth(svi_ct_htt,
+    svi4<-tract_choropleth(svi_ct_htt,
                      state_name  = "connecticut",
                      county_zoom = NULL,
                      title       = "Housing Type & Transportation Ranking of Census Tracts in Connecticut",
