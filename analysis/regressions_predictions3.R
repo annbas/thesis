@@ -22,11 +22,17 @@ source('./excess_deaths_functions/runIfExpired.R')
 ir<-read.csv("covidnet2020_IR_FIPS.csv")
 svi<-read.csv("CDC_CensusTract_SVI.csv") 
 test<-read.csv("dph2020_test_IR_FIPS2.csv")
+
 #read in census
 census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
 census <- census[-1,] 
 census <- census[c("GEO_ID","NAME")]
 census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
+
+#create df of total pop by county
+tot.pop <- c(916829, 894014, 189927, 165676, 862477, 274055, 152691, 118428)
+county <- unique(census$county)
+county <- data.frame(county, tot.pop)
 
 ##replace -999 with NA?
 svi[svi == -999] <- NA
@@ -313,7 +319,7 @@ mod_sub<-subset(test_svi,select = sub2)
       #bind to and melt by census tract?
       preds.stage2.m <- reshape2::melt(cbind.data.frame('GEO_ID'=dph_hosp2$GEO_ID,preds.stage2), id.vars='GEO_ID')
       
-    #overall excess and uncertainty
+    #OVERALL EXCESS
       excess1 <- merge(preds.stage2.m, dph_hosp2[,c('GEO_ID','dph_hosp_count')], 
                        by='GEO_ID')
       
@@ -326,6 +332,33 @@ mod_sub<-subset(test_svi,select = sub2)
       excess2 <- quantile(excess1$excessN, probs=c(0.5, 0.025, 0.975))
       
       round(excess2, -2)
+      
+    #PREDICTION INTERVALS BY CENSUS TRACT
+      preds.ci <- as.data.frame(t(apply(preds.stage2, 1, quantile, probs=c(0.5, 0.025, 0.975))))
+      
+      names(preds.ci) <- c('pred.mc','lcl.mc','ucl.mc')
+      
+      preds.ci <- cbind.data.frame(dph_hosp2, preds.ci)
+      
+    #PREDICTION INTERVALS BY COUNTY
+      #merge preds.ci to county data
+      preds.ci.county <- merge(preds.ci, census[ ,c("GEO_ID", "county")],all.x = TRUE, all.y = FALSE) 
+      preds.ci.county <- merge(preds.ci.county, tot, all.x = TRUE, all.y = FALSE)
+      
+      #sum by county and calculate rates??
+      preds.ci.county.sum <- preds.ci.county %>%
+        group_by(county) %>%
+        dplyr::summarize('pred.mc' = sum(pred.mc),
+                         'lcl.mc'  = sum(lcl.mc),
+                         'ucl.mc'  = sum(ucl.mc)) %>%
+        mutate('pred.mc.rate' = (pred.mc/tot.pop)*100000,
+               'lcl.mc.rate'  = (lcl.mc/tot.pop)*100000,
+               'ucl.mc.rate'  = (ucl.mc/tot.pop)*100000)
+      
+      #visualize rates
+      ggplot(preds.ci.county.sum, aes(county, pred.mc.rate)) + 
+        geom_point() + 
+        geom_errorbar(aes(ymin = lcl.mc.rate, ymax = ucl.mc.rate))
     
     
 ##### AGGREGATE BY COUNTY #####    
