@@ -19,9 +19,11 @@ source("Z:/FluSurv-NET/COVID-19/Ann/Thesis/thesis/analysis/mod_functions.R")
 source('./excess_deaths_functions/runIfExpired.R')
 
 #read in data
-ir<-read.csv("covidnet2020_IR_FIPS.csv")
-svi<-read.csv("CDC_CensusTract_SVI.csv") 
-test<-read.csv("dph2020_test_IR_FIPS2.csv")
+ir<-read.csv("covidnet2020_IR_FIPS.csv")     #COVID-NET data
+svi<-read.csv("CDC_CensusTract_SVI.csv")     #CDC SVI data
+test<-read.csv("dph2020_test_IR_FIPS2.csv")  #state testing data
+dph.hosp.rate <- read.csv("dph2020_IR_FIPS3.csv") #state hosp data
+names(dph_hosp)[names(dph_hosp) == "cases_per_cen"] <- "dph_hosp_count"
 
 #read in census
 census<-read.csv("DECENNIALPL2010.P1_data_with_overlays_2022-02-11T112106.csv")
@@ -33,6 +35,18 @@ census$county <- sub("^([^,]+),\\s*([^,]+),.*", "\\2", census$NAME)
 tot.pop <- c(916829, 894014, 189927, 165676, 862477, 274055, 152691, 118428)
 county <- unique(census$county)
 county <- data.frame(county, tot.pop)
+
+#create df with observed rates by county using CTEDSS data
+ctedss.county.count <- merge(dph.hosp.rate[ ,c("GEO_ID", "cases_per_cen")], census[ ,c("GEO_ID", "county")],all.x = TRUE, all.y = FALSE)
+ctedss.county.count <- ctedss.county.rate %>%
+                        group_by(county) %>%
+                        filter(!is.na(county)) %>%
+                        dplyr::summarize('hosp.count' = sum(cases_per_cen, na.rm = T))
+
+ctedss.county.rate <- merge(ctedss.county.count,county)                 
+ctedss.county.rate <- ctedss.county.rate %>%
+                        mutate('hosp.rate' = (hosp.count/tot.pop)*100000) 
+ctedss.county.rate <- subset(ctedss.county.rate, select = -c(tot.pop) )
 
 ##replace -999 with NA?
 svi[svi == -999] <- NA
@@ -239,12 +253,9 @@ mod_sub<-subset(test_svi,select = sub2)
 ##### predict for state ##### 
     
     #create dph dataset for model
-      #read in state hosp data
-      dph_hosp <- read.csv("dph2020_IR_FIPS3.csv")
-      names(dph_hosp)[names(dph_hosp) == "cases_per_cen"] <- "dph_hosp_count"
       
-      #merge with scaled
-      dph_hosp <- merge(dph_hosp, scaled, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
+      #merge dph hospital counts with scaled
+      dph_hosp <- merge(dph.hosp.rate, scaled, by = "GEO_ID", all.x = TRUE, all.y = FALSE)
       
       
     
@@ -282,7 +293,7 @@ mod_sub<-subset(test_svi,select = sub2)
     dph.pred.pi<-subset(dph.pred,select = c("GEO_ID","dph_hosp_count","preds"))
     
     #generating samples based on parameter uncertainty
-      set.seed (1234)
+      set.seed(1234)
       
       #coefs.mod1 <- coef(mod1) #Mean estimate of the regression coefficients
       #NOTE: this was created when generating predictions for the state
@@ -355,10 +366,29 @@ mod_sub<-subset(test_svi,select = sub2)
                'lcl.mc.rate'  = (lcl.mc/tot.pop)*100000,
                'ucl.mc.rate'  = (ucl.mc/tot.pop)*100000)
       
-      #visualize rates
-      ggplot(preds.ci.county.sum, aes(county, pred.mc.rate)) + 
-        geom_point() + 
-        geom_errorbar(aes(ymin = lcl.mc.rate, ymax = ucl.mc.rate))
+      #merge CTEDSS rates to preds.ci data
+      preds.ci.county.obs <- merge(preds.ci.county.sum, ctedss.county.rate[ ,c("county","hosp.rate")])
+
+      #subtract ub, lb, and pt est from observed
+      preds.ci.county.dev <- preds.ci.county.obs %>%
+                              dplyr::summarize('county' = county,
+                                               'obs.rate' = hosp.rate,
+                                               'pred.mc.dev' = pred.mc.rate - hosp.rate,
+                                               'lcl.mc.dev'  = lcl.mc.rate - hosp.rate,
+                                               'ucl.mc.dev'  = ucl.mc.rate - hosp.rate)
+      
+      #create horizontal point and whisker plot (?) 
+      library(hrbrthemes)
+      
+      ggplot(preds.ci.county.dev, aes(pred.mc.dev, county)) + 
+        geom_errorbarh(aes(xmin = lcl.mc.dev, xmax = ucl.mc.dev), height = .2) +
+        geom_point(color = "#2C8BFF", alpha = 1, size = 4) + 
+        geom_vline(xintercept=0, linetype = "dashed") +
+        theme_pubclean() +
+        theme(
+          legend.position="none"
+        ) +
+        ylab("")
     
     
 ##### AGGREGATE BY COUNTY #####    
