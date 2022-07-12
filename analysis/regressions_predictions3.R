@@ -327,8 +327,10 @@ mod_sub<-subset(test_svi,select = sub2)
       
       preds.stage2 <- matrix(preds.stage2, ncol=ncol(log.preds.stage1.regmean))
       
-      #bind to and melt by census tract?
+      #bind to and melt by census tract? 
       preds.stage2.m <- reshape2::melt(cbind.data.frame('GEO_ID'=dph_hosp2$GEO_ID,preds.stage2), id.vars='GEO_ID')
+      
+      
       
     #OVERALL EXCESS
       excess1 <- merge(preds.stage2.m, dph_hosp2[,c('GEO_ID','dph_hosp_count')], 
@@ -352,44 +354,67 @@ mod_sub<-subset(test_svi,select = sub2)
       preds.ci <- cbind.data.frame(dph_hosp2, preds.ci)
       
     #PREDICTION INTERVALS BY COUNTY
-      #merge preds.ci to county data
-      preds.ci.county <- merge(preds.ci, census[ ,c("GEO_ID", "county")],all.x = TRUE, all.y = FALSE) 
-      preds.ci.county <- merge(preds.ci.county, tot, all.x = TRUE, all.y = FALSE)
+      #bind county
+      preds.stage2.m.county <- merge(cbind.data.frame('GEO_ID'=dph_hosp2$GEO_ID, preds.stage2), 
+                                     census[,c('GEO_ID','county')], 
+                                     by='GEO_ID', all.x = T, all.y = F)
+      #remove GEO_ID
+      preds.stage2.m.county[1] <- NULL
       
-      #sum by county and calculate rates??
-      preds.ci.county.sum <- preds.ci.county %>%
-        group_by(county) %>%
-        dplyr::summarize('pred.mc' = sum(pred.mc),
-                         'lcl.mc'  = sum(lcl.mc),
-                         'ucl.mc'  = sum(ucl.mc)) %>%
-        mutate('pred.mc.rate' = (pred.mc/tot.pop)*100000,
-               'lcl.mc.rate'  = (lcl.mc/tot.pop)*100000,
-               'ucl.mc.rate'  = (ucl.mc/tot.pop)*100000)
+      #melt
+      preds.stage2.m.county <- reshape2::melt(preds.stage2.m.county, id.vars = 'county')
       
-      #merge CTEDSS rates to preds.ci data
-      preds.ci.county.obs <- merge(preds.ci.county.sum, ctedss.county.rate[ ,c("county","hosp.rate")])
-
+      #find quantiles for each county
+      preds.ci.county <- preds.stage2.m.county %>%
+                            group_by(variable, county) %>%
+                            dplyr::summarize(N_pred_county= sum(value)) %>%
+                            ungroup() %>%
+                            group_by(county) %>%
+                            mutate(median=median(N_pred_county), 
+                                   lcl= quantile(N_pred_county, probs=0.025),  
+                                   ucl= quantile(N_pred_county, probs=0.975)) %>%
+                            ungroup() %>%
+                            dplyr::select(-variable, -N_pred_county) %>%
+                            unique()
+      
+      #merge CTEDSS hosp counts to preds.ci data
+      preds.ci.county.obs <- merge(preds.ci.county, ctedss.county.count[ ,c("county","hosp.count")])
+      
       #subtract ub, lb, and pt est from observed
       preds.ci.county.dev <- preds.ci.county.obs %>%
                               dplyr::summarize('county' = county,
-                                               'obs.rate' = hosp.rate,
-                                               'pred.mc.dev' = pred.mc.rate - hosp.rate,
-                                               'lcl.mc.dev'  = lcl.mc.rate - hosp.rate,
-                                               'ucl.mc.dev'  = ucl.mc.rate - hosp.rate)
+                                               'median.dev' = median - hosp.count,
+                                               'lcl.dev'  = lcl - hosp.count,
+                                               'ucl.dev'  = ucl - hosp.count)
       
-      #create horizontal point and whisker plot (?) 
+      #merge county ds to tot pop data
+      preds.ci.county.rate <- merge(preds.ci.county.dev, county, all.x = TRUE, all.y = FALSE)
+      
+      #calculate rates
+      preds.ci.county.rate <- preds.ci.county.rate %>%
+                              mutate('median.rate' = (median.dev/tot.pop)*100000,
+                                     'lcl.rate'  = (lcl.dev/tot.pop)*100000,
+                                     'ucl.rate'  = (ucl.dev/tot.pop)*100000)
+      
+      #create plot 
       library(hrbrthemes)
       
-      ggplot(preds.ci.county.dev, aes(pred.mc.dev, county)) + 
-        geom_errorbarh(aes(xmin = lcl.mc.dev, xmax = ucl.mc.dev), height = .2) +
+      ggplot(preds.ci.county.rate, aes(median.rate, county)) + 
+        geom_errorbarh(aes(xmin = lcl.rate, xmax = ucl.rate), height = .2) +
         geom_point(color = "#2C8BFF", alpha = 1, size = 4) + 
         geom_vline(xintercept=0, linetype = "dashed") +
         theme_pubclean() +
         theme(
           legend.position="none"
         ) +
-        ylab("")
+        scale_y_discrete(limits=rev) +
+        ylab("") +
+        xlab("Estimated excess hospitalizations per 100,000")
     
+      ggsave(filename = "county_pi2.png",width = 7, height = 7, 
+             units = "in", device='png', dpi=300)
+      
+      
     
 ##### AGGREGATE BY COUNTY #####    
     #sum of predicted and observed values per county
